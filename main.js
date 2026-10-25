@@ -2,6 +2,7 @@ import {
 	state, attack, buyUnit, buyUpgrade, buySkill, resetSkills, resetGame, clickHvt, setTab,
 	selectLevel, startBoss, tick, closeAirSupportTick, updateReveals, serialize, deserialize,
 } from './game.js';
+import { CAS_INTERVAL } from './data.js';
 import { App } from './ui.js';
 
 const saveKey = 'clickingSpreeSave';
@@ -51,5 +52,5 @@ render();
 
 const timers = withRender({ tick, closeAirSupportTick });
 setInterval(timers.tick, 1000);
-setInterval(timers.closeAirSupportTick, 5000);
+setInterval(timers.closeAirSupportTick, CAS_INTERVAL * 1000);
 setInterval(writeSave, autosaveInterval);

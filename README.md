@@ -44,6 +44,7 @@ Then open the localhost URL it prints.
 
 ## Changelog
 
+- v1.6 - much tougher bosses, power levels for you and each boss (boss estimates are fuzzed), a 20% kill penalty and retreat message when a boss fight times out, a boss timer bar, hidden zones and levels until unlocked, and a subtler Attack button press
 - v1.5 - world map with 4 zones of 4 levels each, a header level panel with new-level announcements, lifetime kills for level progress, and timed boss fights to clear each level
 - v1.4 - compact unit rows, a Reset button to start a new game, and floating damage numbers for every click (red for crits)
 - v1.3 - sticky, slimmer tabs with badges for buyable upgrades and unspent skill points; unlocked tiers drop their requirement text

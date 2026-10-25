@@ -1,8 +1,8 @@
-import { UNITS, UPGRADES, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION } from './data.js';
+import { UNITS, UPGRADES, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION, BOSS_POWER_FUZZ, BOSS_RETREAT_PENALTY } from './data.js';
 import {
 	stats, unitCost, upgradeCost, crewNeeded, unitKps, displayKps, hvtReward,
 	canBuyUnit, canBuyUpgrade, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
-	levelDef, levelAvailable, levelBeat, canFightBoss,
+	levelDef, levelAvailable, levelBeat, canFightBoss, playerPower, bossPower,
 } from './game.js';
 
 // Components are built once and return { el, update(state, env) }.
@@ -38,6 +38,47 @@ const formatCount = (n) => Math.floor(n).toLocaleString('en-US');
 
 const levelLabel = (def) => `Zone ${def.zoneNumber} - Level ${def.levelNumber}: ${def.name}`;
 
+// Two significant digits with a suffix: 6.5, 240, 1.5K, 170M, 43B
+const formatPower = (n) => {
+	const suffixes = ['', 'K', 'M', 'B', 'T'];
+	let tier = 0;
+	let rounded = Number(n.toPrecision(2));
+	while (rounded >= 1000 && tier < suffixes.length - 1) {
+		n /= 1000;
+		tier += 1;
+		rounded = Number(n.toPrecision(2));
+	}
+	return `${rounded}${suffixes[tier]}`;
+};
+
+// A fixed offset per level (from its id), so the estimate never flickers or changes between visits.
+const fuzzFactor = (id) => {
+	let hash = 0;
+	for (const char of id) {
+		hash = (hash * 31 + char.charCodeAt(0)) % 1000;
+	}
+	return 1 + BOSS_POWER_FUZZ * (hash / 500 - 1);
+};
+
+const estimatedBossPower = (def) => bossPower(def) * fuzzFactor(def.id);
+
+function PowerCompare() {
+	const you = h('strong');
+	const boss = h('strong');
+	const el = h('div', { className: 'power-compare' }, 'Your power ', you, ' \u00b7 Boss power ~', boss);
+
+	return {
+		el,
+		update(s, def) {
+			const player = playerPower(s);
+			const estimate = estimatedBossPower(def);
+			setText(you, formatPower(player));
+			setText(boss, formatPower(estimate));
+			el.classList.toggle('power-ready', player >= estimate);
+		},
+	};
+}
+
 const statsTable = (...rows) => h('table', { className: 'stats-table' },
 	rows.map(([label, ...cells]) => h('tr', {}, h('td', {}, label), h('td', {}, ...cells))),
 );
@@ -72,16 +113,20 @@ function LevelPanel(actions) {
 	const progressBlock = h('div', {}, bar, count, status, fightButton);
 
 	const bossName = h('span');
+	const timerFill = h('div', { className: 'boss-timer-fill' });
+	const timerBar = h('div', { className: 'boss-timer' }, timerFill);
 	const bossBar = h('progress', { className: 'boss-hp' });
 	const bossHp = h('span');
 	const bossTime = h('span', { className: 'boss-time' });
 	const bossBlock = h('div', { className: 'boss-block' },
 		h('div', { className: 'boss-name' }, 'BOSS: ', bossName),
+		timerBar,
 		bossBar,
 		h('div', { className: 'boss-stats' }, bossHp, bossTime),
 	);
 
-	const el = h('div', { className: 'level-panel' }, zone, title, progressBlock, bossBlock);
+	const power = PowerCompare();
+	const el = h('div', { className: 'level-panel' }, zone, title, power.el, progressBlock, bossBlock);
 
 	const announce = ({ levelId: id, defeatedBoss }) => {
 		const def = levelDef[id];
@@ -96,7 +141,18 @@ function LevelPanel(actions) {
 		el.classList.add('level-new');
 	};
 
+	const announceRetreat = ({ bossName, killsLost }) => {
+		const banner = h('div', { className: 'level-banner level-banner-retreat' },
+			h('div', { className: 'level-banner-top' }, 'Forced to retreat'),
+			h('div', {}, `${bossName} held the line.`),
+			h('div', { className: 'level-banner-detail' }, `Lost ${formatCount(killsLost)} kills in the retreat.`),
+		);
+		banner.addEventListener('animationend', () => banner.remove());
+		el.append(banner);
+	};
+
 	let seenLevelStarts = 0;
+	let seenBossLosses = 0;
 
 	return {
 		el,
@@ -107,6 +163,8 @@ function LevelPanel(actions) {
 			setText(title, levelLabel(def));
 
 			const cleared = s.map.cleared[def.id];
+			power.el.hidden = cleared;
+			power.update(s, def);
 			bar.max = def.killsRequired;
 			bar.value = cleared ? def.killsRequired : Math.min(s.map.progress[def.id], def.killsRequired);
 			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)} lifetime kills earned here`);
@@ -123,13 +181,20 @@ function LevelPanel(actions) {
 				bossBar.value = Math.max(0, s.boss.hp);
 				setText(bossHp, `${formatCount(Math.max(0, s.boss.hp))} / ${formatCount(s.boss.maxHp)} HP`);
 				setText(bossTime, `${s.boss.timeLeft}s left`);
-				bossTime.classList.toggle('boss-time-low', s.boss.timeLeft <= 5);
+				const timeLow = s.boss.timeLeft <= 5;
+				bossTime.classList.toggle('boss-time-low', timeLow);
+				timerBar.classList.toggle('boss-timer-low', timeLow);
+				timerFill.style.width = `${(s.boss.timeLeft / boss.seconds) * 100}%`;
 			}
 
 			if (s.levelStarts > seenLevelStarts) {
 				announce(s.lastLevelStart);
 			}
 			seenLevelStarts = s.levelStarts;
+			if (s.bossLosses > seenBossLosses) {
+				announceRetreat(s.lastBossLoss);
+			}
+			seenBossLosses = s.bossLosses;
 		},
 	};
 }
@@ -433,10 +498,12 @@ function LevelRow(def, actions) {
 	const status = h('span', { className: 'level-row-status' });
 	const bar = h('progress', { className: 'level-progress' });
 	const count = h('span', { className: 'level-row-count' });
+	const power = PowerCompare();
 	const el = h('li', { className: 'level-row' },
 		h('div', { className: 'level-row-name' },
 			h('strong', {}, `Level ${def.levelNumber}: ${def.name}`), h('br'),
 			status,
+			power.el,
 		),
 		h('div', { className: 'level-row-progress' }, bar, count),
 		h('div', { className: 'level-row-actions' }, deployButton, fightButton),
@@ -447,9 +514,11 @@ function LevelRow(def, actions) {
 		update(s) {
 			const available = levelAvailable(def.id, s);
 			const active = s.map.activeLevel === def.id;
-			el.classList.toggle('level-locked', !available);
+			el.hidden = !available;
 			el.classList.toggle('level-active', active);
-			setText(status, !available ? 'Locked' : `${active ? 'Active \u00b7 ' : ''}${levelStatus(def, s)}`);
+			setText(status, `${active ? 'Active \u00b7 ' : ''}${levelStatus(def, s)}`);
+			power.el.hidden = s.map.cleared[def.id];
+			power.update(s, def);
 			bar.max = def.killsRequired;
 			bar.value = s.map.cleared[def.id] ? def.killsRequired : Math.min(s.map.progress[def.id], def.killsRequired);
 			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)}`);
@@ -460,7 +529,8 @@ function LevelRow(def, actions) {
 }
 
 function ZoneSection(zone, actions) {
-	const rows = LEVELS.filter((def) => def.zone === zone.id).map((def) => LevelRow(def, actions));
+	const levels = LEVELS.filter((def) => def.zone === zone.id);
+	const rows = levels.map((def) => LevelRow(def, actions));
 	const el = h('div', { className: 'zone-section' },
 		h('h4', {}, `Zone ${ZONES.indexOf(zone) + 1}: ${zone.name}`),
 		h('p', { className: 'zone-faction' }, `Enemy: ${zone.faction}`),
@@ -470,6 +540,7 @@ function ZoneSection(zone, actions) {
 	return {
 		el,
 		update(s) {
+			el.hidden = !levelAvailable(levels[0].id, s);
 			rows.forEach((row) => row.update(s));
 		},
 	};
@@ -478,7 +549,7 @@ function ZoneSection(zone, actions) {
 function MapPanel(actions) {
 	const zones = ZONES.map((zone) => ZoneSection(zone, actions));
 	const el = h('div', { className: 'map' },
-		h('p', { className: 'map-intro' }, 'Kills earned while a level is active count toward it, on any tab. Spending never lowers progress. Reach the goal, then fight the boss to unlock the next level.'),
+		h('p', { className: 'map-intro' }, `Kills earned while a level is active count toward it, on any tab. Spending never lowers progress. Reach the goal, then fight the boss to unlock the next level. If time runs out, you retreat and lose ${BOSS_RETREAT_PENALTY * 100}% of your current kills.`),
 		zones.map((zone) => zone.el),
 	);
 

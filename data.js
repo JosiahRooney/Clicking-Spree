@@ -1,4 +1,4 @@
-export const VERSION = '1.5';
+export const VERSION = '1.6';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -176,6 +176,9 @@ export const TIER_REQUIREMENTS = [0, 5, 10, 15];
 export const BASE_CRIT_MULTIPLIER = 5;
 export const TICK_CRIT_MULTIPLIER = 3;
 export const BASE_CAS_CHANCE = 0.5;
+export const CAS_KILLS = 100000;
+// Seconds between Close Air Support rolls. main.js runs the timer.
+export const CAS_INTERVAL = 5;
 export const HVT = {
 	minInterval: 60,
 	maxInterval: 120,
@@ -306,43 +309,53 @@ export const SKILLS = [
 
 // ======== World map ========
 
+// Clicks per second assumed when turning click damage into power. A steady pace, not a frenzy.
+export const POWER_CLICKS_PER_SECOND = 5;
+// Displayed boss power is off by up to this fraction either way (fixed per level), so matchups aren't exact.
+export const BOSS_POWER_FUZZ = 0.1;
+// Share of current (spendable) kills lost when a boss fight runs out of time.
+export const BOSS_RETREAT_PENALTY = 0.2;
+
 // Array order is the unlock chain: each level needs the one before it cleared; the first level is always open.
 // killsRequired counts kills earned while the level is active. boss.seconds is the fight's time limit.
+// Boss power is hp / seconds. hp is sized from a simulated playthrough (clicking 5/s, buying the best
+// power per kill) so that after reaching killsRequired, a typical player grinds about 30 seconds on the
+// first level, ramping to about 5 minutes on the last, before their power matches the boss.
 export const ZONES = [
 	{
 		id: 'desert', name: 'Operation Desert Anvil', faction: 'Insurgent Militia',
 		levels: [
-			{ id: 'desert1', name: 'Checkpoint Raid', killsRequired: 100, boss: { name: 'Militia Captain', hp: 25, seconds: 30 } },
-			{ id: 'desert2', name: 'Supply Route', killsRequired: 500, boss: { name: 'Convoy Commander', hp: 125, seconds: 30 } },
-			{ id: 'desert3', name: 'Oasis Compound', killsRequired: 2000, boss: { name: 'Arms Dealer', hp: 500, seconds: 30 } },
-			{ id: 'desert4', name: 'Mountain Caves', killsRequired: 5000, boss: { name: 'Militia Warlord', hp: 1250, seconds: 30 } },
+			{ id: 'desert1', name: 'Checkpoint Raid', killsRequired: 100, boss: { name: 'Militia Captain', hp: 240, seconds: 30 } },
+			{ id: 'desert2', name: 'Supply Route', killsRequired: 500, boss: { name: 'Convoy Commander', hp: 940, seconds: 30 } },
+			{ id: 'desert3', name: 'Oasis Compound', killsRequired: 2000, boss: { name: 'Arms Dealer', hp: 4_700, seconds: 30 } },
+			{ id: 'desert4', name: 'Mountain Caves', killsRequired: 5000, boss: { name: 'Militia Warlord', hp: 5_100, seconds: 30 } },
 		],
 	},
 	{
 		id: 'jungle', name: 'Operation Jungle Viper', faction: 'Guerrilla Cartel',
 		levels: [
-			{ id: 'jungle1', name: 'River Crossing', killsRequired: 20000, boss: { name: 'Sniper Nest', hp: 5000, seconds: 35 } },
-			{ id: 'jungle2', name: 'Hidden Airstrip', killsRequired: 60000, boss: { name: 'Smuggler Pilot', hp: 15000, seconds: 35 } },
-			{ id: 'jungle3', name: 'Cartel Plantation', killsRequired: 150000, boss: { name: 'Enforcer', hp: 37500, seconds: 35 } },
-			{ id: 'jungle4', name: 'Temple Fortress', killsRequired: 400000, boss: { name: 'Cartel Kingpin', hp: 100000, seconds: 35 } },
+			{ id: 'jungle1', name: 'River Crossing', killsRequired: 20000, boss: { name: 'Sniper Nest', hp: 6_500, seconds: 35 } },
+			{ id: 'jungle2', name: 'Hidden Airstrip', killsRequired: 60000, boss: { name: 'Smuggler Pilot', hp: 210_000, seconds: 35 } },
+			{ id: 'jungle3', name: 'Cartel Plantation', killsRequired: 150000, boss: { name: 'Enforcer', hp: 1_500_000, seconds: 35 } },
+			{ id: 'jungle4', name: 'Temple Fortress', killsRequired: 400000, boss: { name: 'Cartel Kingpin', hp: 170_000_000, seconds: 35 } },
 		],
 	},
 	{
 		id: 'tundra', name: 'Operation Iron Frost', faction: 'Northern Mechanized Army',
 		levels: [
-			{ id: 'tundra1', name: 'Frozen Outpost', killsRequired: 1000000, boss: { name: 'Recon Battalion', hp: 250000, seconds: 40 } },
-			{ id: 'tundra2', name: 'Rail Yard', killsRequired: 3000000, boss: { name: 'Armored Train', hp: 750000, seconds: 40 } },
-			{ id: 'tundra3', name: 'Missile Silo', killsRequired: 8000000, boss: { name: 'Silo Commander', hp: 2000000, seconds: 40 } },
-			{ id: 'tundra4', name: 'Iron Citadel', killsRequired: 20000000, boss: { name: 'Tank General', hp: 5000000, seconds: 40 } },
+			{ id: 'tundra1', name: 'Frozen Outpost', killsRequired: 1000000, boss: { name: 'Recon Battalion', hp: 13_000_000_000, seconds: 40 } },
+			{ id: 'tundra2', name: 'Rail Yard', killsRequired: 3000000, boss: { name: 'Armored Train', hp: 19_000_000_000, seconds: 40 } },
+			{ id: 'tundra3', name: 'Missile Silo', killsRequired: 8000000, boss: { name: 'Silo Commander', hp: 22_000_000_000, seconds: 40 } },
+			{ id: 'tundra4', name: 'Iron Citadel', killsRequired: 20000000, boss: { name: 'Tank General', hp: 25_000_000_000, seconds: 40 } },
 		],
 	},
 	{
 		id: 'blackSky', name: 'Operation Black Sky', faction: 'Rogue Superpower Command',
 		levels: [
-			{ id: 'blackSky1', name: 'Coastal Radar', killsRequired: 50000000, boss: { name: 'Air Defense Grid', hp: 12500000, seconds: 45 } },
-			{ id: 'blackSky2', name: 'Carrier Group', killsRequired: 150000000, boss: { name: 'Fleet Admiral', hp: 37500000, seconds: 45 } },
-			{ id: 'blackSky3', name: 'Command Bunker', killsRequired: 400000000, boss: { name: 'Strategic Command', hp: 100000000, seconds: 45 } },
-			{ id: 'blackSky4', name: 'Capital Strike', killsRequired: 1000000000, boss: { name: 'Supreme Commander', hp: 250000000, seconds: 45 } },
+			{ id: 'blackSky1', name: 'Coastal Radar', killsRequired: 50000000, boss: { name: 'Air Defense Grid', hp: 32_000_000_000, seconds: 45 } },
+			{ id: 'blackSky2', name: 'Carrier Group', killsRequired: 150000000, boss: { name: 'Fleet Admiral', hp: 37_000_000_000, seconds: 45 } },
+			{ id: 'blackSky3', name: 'Command Bunker', killsRequired: 400000000, boss: { name: 'Strategic Command', hp: 40_000_000_000, seconds: 45 } },
+			{ id: 'blackSky4', name: 'Capital Strike', killsRequired: 1000000000, boss: { name: 'Supreme Commander', hp: 43_000_000_000, seconds: 45 } },
 		],
 	},
 ];

@@ -1,6 +1,7 @@
 import {
 	UNITS, UPGRADES, SKILLS, TIER_REQUIREMENTS, XP_BASE, XP_GROWTH,
-	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, HVT, LEVELS,
+	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, CAS_KILLS, CAS_INTERVAL, HVT, LEVELS,
+	POWER_CLICKS_PER_SECOND, BOSS_RETREAT_PENALTY,
 } from './data.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
@@ -38,6 +39,9 @@ const freshState = () => ({
 	// Not saved: lets the UI notice a level start and announce it.
 	levelStarts: 0,
 	lastLevelStart: { levelId: null, defeatedBoss: null },
+	// Not saved: lets the UI notice a lost boss fight and announce the retreat.
+	bossLosses: 0,
+	lastBossLoss: { bossName: null, killsLost: 0 },
 });
 
 // Other modules hold a reference to this object, so it is only ever mutated, never reassigned.
@@ -143,6 +147,31 @@ export const unitKps = (def, s = state) => {
 // What the player actually earns per second, including the all-kills bonus.
 export const displayKps = (s = state) => s.kps * stats(s).allKillsMultiplier;
 
+// The average of each recruit's best roll, so power doesn't jump around with the dice.
+const expectedRecruitRoll = (s) => {
+	const { betterRecruits, recruitRolls: rolls } = stats(s);
+	return betterRecruits ? 1 + (1 - (1 / 3) ** rolls) + (1 - (2 / 3) ** rolls) : rolls / (rolls + 1);
+};
+
+const expectedKps = (s) => UNITS.reduce((sum, def) => sum
+	+ s.units[def.id] * (def.id === 'recruit' ? expectedRecruitRoll(s) * stats(s).kpsMultiplier(def) : unitKps(def, s)), 0);
+
+// Expected kills per second in a fight: troops, Close Air Support, and steady clicking, crits included.
+// Directly comparable to bossPower: at least equal power should win in time.
+export const playerPower = (s = state) => {
+	const {
+		clickBonus, clickMultiplier, clickKpsShare, critChance, critMultiplier,
+		tickCritChance, closeAirSupport, casChance, allKillsMultiplier,
+	} = stats(s);
+	const kps = expectedKps(s);
+	const troops = kps * (1 + tickCritChance * (TICK_CRIT_MULTIPLIER - 1));
+	const click = (clickBonus * clickMultiplier + kps * clickKpsShare) * (1 + critChance * (critMultiplier - 1));
+	const airSupport = closeAirSupport ? (Math.min(1, casChance) * CAS_KILLS) / CAS_INTERVAL : 0;
+	return (troops + click * POWER_CLICKS_PER_SECOND + airSupport) * allKillsMultiplier;
+};
+
+export const bossPower = (def) => def.boss.hp / def.boss.seconds;
+
 const hvtBaseReward = (s) => Math.max(HVT.minReward, s.kps * HVT.rewardSeconds) * stats(s).hvtRewardMultiplier;
 
 // What clicking the current target pays, including the all-kills bonus.
@@ -227,14 +256,23 @@ function damageBoss(amount) {
 	}
 }
 
-// Losing costs nothing: the fight just ends and the boss can be fought again.
+// Losing costs a share of spendable kills only; XP, lifetime kills and level progress are kept,
+// so the boss can be fought again right away.
+function loseBoss() {
+	const killsLost = state.kills * BOSS_RETREAT_PENALTY;
+	state.kills -= killsLost;
+	state.bossLosses += 1;
+	state.lastBossLoss = { bossName: levelDef[state.boss.levelId].boss.name, killsLost };
+	state.boss = null;
+}
+
 function updateBoss() {
 	if (!state.boss) {
 		return;
 	}
 	state.boss.timeLeft -= 1;
 	if (state.boss.timeLeft <= 0) {
-		state.boss = null;
+		loseBoss();
 	}
 }
 
@@ -342,7 +380,7 @@ export function tick() {
 export function closeAirSupportTick() {
 	const { closeAirSupport, casChance } = stats();
 	if (closeAirSupport && Math.random() < casChance) {
-		earn(100000);
+		earn(CAS_KILLS);
 	}
 }
 
@@ -441,6 +479,8 @@ export function deserialize(json, s = state) {
 		lastAttack: s.lastAttack,
 		levelStarts: s.levelStarts,
 		lastLevelStart: s.lastLevelStart,
+		bossLosses: s.bossLosses,
+		lastBossLoss: s.lastBossLoss,
 	});
 	return true;
 }

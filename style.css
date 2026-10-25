@@ -10,6 +10,10 @@
 	-moz-box-sizing: border-box;
 }
 
+[hidden] {
+	display: none !important;
+}
+
 html {
 	height: 100%;
 }
@@ -34,7 +38,17 @@ body {
     height: 84px;
     padding: 15px;
     width: 351px;
+    color: #111;
+    background-color: #F0F0F0;
+    border: 1px solid #8F8F8F;
+    border-radius: 3px;
     box-shadow: 0 5px 15px #636363;
+    transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+}
+
+.clicker:active {
+    transform: translateY(2px);
+    box-shadow: 0 4px 12px #636363;
 }
 
 .killz {
@@ -106,10 +120,6 @@ body {
 	vertical-align: middle;
 	box-sizing: border-box;
 	white-space: nowrap;
-}
-
-.tab-badge[hidden] {
-	display: none;
 }
 
 .barracks {
@@ -189,10 +199,6 @@ button:disabled {
 	gap: 15px;
 	align-items: center;
 	padding: 10px 0;
-}
-
-.barracks li.unit-row[hidden] {
-	display: none;
 }
 
 .unit-thumb {
@@ -296,7 +302,7 @@ button:disabled {
 	float: right;
 	clear: right;
 	width: 450px;
-	height: 215px;
+	height: 240px;
 	margin-top: 12px;
 	padding: 14px 16px;
 	overflow: hidden;
@@ -313,9 +319,23 @@ button:disabled {
 }
 
 .level-title {
-	margin: 4px 0 12px;
+	margin: 4px 0 6px;
 	font-family: 'Special Elite', sans-serif;
 	font-size: 1.5em;
+}
+
+.power-compare {
+	margin-bottom: 8px;
+	font-size: 0.85em;
+	color: #FFB74D;
+}
+
+.power-compare.power-ready {
+	color: #9CCC65;
+}
+
+.level-row .power-compare {
+	margin: 2px 0 0;
 }
 
 .level-progress,
@@ -355,6 +375,25 @@ button:disabled {
 .boss-hp {
 	accent-color: #C00;
 	height: 24px;
+}
+
+.boss-timer {
+	height: 8px;
+	margin-bottom: 6px;
+	background-color: rgba(255, 255, 255, 0.2);
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+/* timeLeft only drops once per second; the linear transition fills in the motion between ticks. */
+.boss-timer-fill {
+	height: 100%;
+	background-color: #FFC107;
+	transition: width 1s linear, background-color 0.3s;
+}
+
+.boss-timer-low .boss-timer-fill {
+	background-color: #FF5252;
 }
 
 .boss-stats {
@@ -402,6 +441,21 @@ button:disabled {
 	font-size: 1.3em;
 	color: #FFD54A;
 	text-transform: uppercase;
+}
+
+.level-banner-retreat {
+	background-color: rgba(48, 12, 10, 0.94);
+}
+
+.level-banner-retreat .level-banner-top {
+	color: #FF5252;
+}
+
+.level-banner-detail {
+	margin-top: 8px;
+	font-family: Helvetica, sans-serif;
+	font-size: 0.7em;
+	color: #FFCDD2;
 }
 
 @keyframes level-banner {
@@ -494,10 +548,6 @@ button:disabled {
 
 .level-active {
 	outline: 2px solid #FFD54A;
-}
-
-.level-locked {
-	opacity: 0.45;
 }
 
 /* Skills tab */
