@@ -1,21 +1,18 @@
-$('.upgrades').hide();
+const barracksPanel = document.querySelector('.barracks');
+const upgradesPanel = document.querySelector('.upgrades');
+const topContent = document.querySelector('.topcontent');
+const scrollPoint = 76;
 
-$('.barracksh3').click(function(){
-	$('.upgrades').hide();
-	$('.barracks').show();
-});
-
-$('.upgradesh3').click(function(){
-	$('.barracks').hide();
-	$('.upgrades').show();
-});
-
-var scrollPoint = 76;
-
-$(document).scroll(function(){
-if ($(document).scrollTop() >= scrollPoint) {
-    $('.topcontent').css('box-shadow','0 0 14px rgba(0, 0, 0, 0.7)');
-} else {
-    $('.topcontent').css('box-shadow','none');
+const showPanel = (panel) => {
+	barracksPanel.hidden = panel !== barracksPanel;
+	upgradesPanel.hidden = panel !== upgradesPanel;
 };
+
+showPanel(barracksPanel);
+
+document.querySelector('.barracksh3').addEventListener('click', () => showPanel(barracksPanel));
+document.querySelector('.upgradesh3').addEventListener('click', () => showPanel(upgradesPanel));
+
+window.addEventListener('scroll', () => {
+	topContent.style.boxShadow = window.scrollY >= scrollPoint ? '0 0 14px rgba(0, 0, 0, 0.7)' : 'none';
 });

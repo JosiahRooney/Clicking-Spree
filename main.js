@@ -1,413 +1,225 @@
-// Global Variables
-var kills = 0;
-var boots = 0;
-var mm = 0;
-var csw = 0;
-var ifv = 0;
-var spc = 0;
-var hvy = 0;
-var f15 = 0;
-var b1b = 0;
-var upgrade = false;
-var upgradeVal = 0;
-var bootUpg = false;
-var bootPwr = (boots * (Math.random().toFixed(2)));
-var mmUpg = false;
-var mmPwr = 5;
-var cahUpg = false;
-var total = 0;
-var rate = false;
-var prevUpg1 = false;
-var prevUpg2 = false;
-var prevUpg3 = false;
-var prevUpg4 = false;
-var prevUpg5 = false;
-var prevUpg6 = false;
+// ======== Game State ========
 
-// Hide units until you can afford them (don't hide first unit)
-$('.marksman').hide();
-$('.cwpn').hide();
-$('.ifvs').hide();
-$('.specops').hide();
-$('.heavy').hide();
-$('.f15').hide();
-$('.b1b').hide();
-
-// Hide upgrades until you can afford them (don't hide first upgrade)
-$('.upgrade2').hide();
-$('.upgrade3').hide();
-$('.upgrade4').hide();
-$('.upgrade5').hide();
-$('.upgrade6').hide();
-
-
-
-// The Upgrades
-
-function buyUpgrade1(){
-    var upg1Cost = 125;
-    if(kills >= upg1Cost){
-        upgrade = true;
-    	kills = kills - upg1Cost;
-        document.getElementById('upgrade1').innerHTML = ('Red Dot Sight Purchased - 5% Bonus Kills Per Click');
-        document.getElementById('kills').innerHTML = kills.toFixed(2);
-        upgradeVal = 1.05;
-        prevUpg1 = true;
-    };
+const game = {
+	kills: 0,
+	kps: 0,
+	clickBonus: 1,
+	betterRecruits: false,
+	doubleTap: false,
 };
 
-function buyUpgrade2(){
-    var upg2Cost = 750;
-    if(kills >= upg2Cost && prevUpg1 == true){
-    	kills = kills - upg2Cost;
-        document.getElementById('upgrade2').innerHTML = ('Grenade Launcher Purchased - 15% Bonus Kills Per Click');
-        document.getElementById('kills').innerHTML = kills.toFixed(2);
-        upgradeVal = 1.20;
-        prevUpg2 = true;
-    };
+// needs: units consumed on purchase. reveal: kills needed before the unit is shown.
+const units = {
+	recruit:  { baseCost: 50,        kps: 0,       count: 0, needs: null,                            reveal: 0,        li: '.boot',     button: '.buyRecruit',  countId: 'boots', costId: 'bootCost' },
+	marksman: { baseCost: 350,       kps: 5,       count: 0, needs: { unit: 'recruit',  amount: 1 }, reveal: 74,       li: '.marksman', button: '.buyMarksman', countId: 'mm',    costId: 'mmCost' },
+	crewWpn:  { baseCost: 3750,      kps: 25,      count: 0, needs: { unit: 'recruit',  amount: 3 }, reveal: 450,      li: '.cwpn',     button: '.buyCrewWpn',  countId: 'csw',   costId: 'cswCost' },
+	ifv:      { baseCost: 24750,     kps: 175,     count: 0, needs: { unit: 'recruit',  amount: 5 }, reveal: 3449,     li: '.ifvs',     button: '.buyIFV',      countId: 'ifv',   costId: 'ifvCost' },
+	specOps:  { baseCost: 129500,    kps: 1250,    count: 0, needs: { unit: 'marksman', amount: 1 }, reveal: 19499,    li: '.specops',  button: '.buySpecOps',  countId: 'spc',   costId: 'spcCost' },
+	heavy:    { baseCost: 1880000,   kps: 28000,   count: 0, needs: { unit: 'marksman', amount: 3 }, reveal: 719999,   li: '.heavy',    button: '.buyHeavy',    countId: 'hvy',   costId: 'hvyCost' },
+	f15:      { baseCost: 14990000,  kps: 145500,  count: 0, needs: { unit: 'specOps',  amount: 1 }, reveal: 2900000,  li: '.f15',      button: '.buyF15',      countId: 'f15',   costId: 'f15Cost' },
+	b1b:      { baseCost: 145670000, kps: 2567000, count: 0, needs: { unit: 'specOps',  amount: 4 }, reveal: 29000000, li: '.b1b',      button: '.buyB1B',      countId: 'b1b',   costId: 'b1bCost' },
 };
 
-function buyUpgrade3(){
-    var upg3Cost = 1950;
-    if(kills >= upg3Cost && prevUpg2 == true){
-    	kills = kills - upg3Cost;
-        document.getElementById('upgrade3').innerHTML = ('Better Drill Instructors Purchased - Recruit KPS is now 1 - 3');
-        document.getElementById('kills').innerHTML = kills.toFixed(2);
-        document.getElementById('bootPwr').innerHTML = ('1 - 3');
-        bootUpg = true;
-        prevUpg3 = true;
-    };
+// Each upgrade requires the one before it.
+const upgrades = [
+	{
+		cost: 125, reveal: 0, li: '.upgrade1', button: '.buyUpgrade1', purchased: false,
+		message: 'Red Dot Sight Purchased - 5% Bonus Kills Per Click',
+		apply: () => { game.clickBonus = 1.05; },
+	},
+	{
+		cost: 750, reveal: 500, li: '.upgrade2', button: '.buyUpgrade2', purchased: false,
+		message: 'Grenade Launcher Purchased - 15% Bonus Kills Per Click',
+		apply: () => { game.clickBonus = 1.20; },
+	},
+	{
+		cost: 1950, reveal: 1500, li: '.upgrade3', button: '.buyUpgrade3', purchased: false,
+		message: 'Better Drill Instructors Purchased - Recruit KPS is now 1 - 3',
+		apply: () => {
+			game.betterRecruits = true;
+			setText('bootPwr', '1 - 3');
+		},
+	},
+	{
+		cost: 25000, reveal: 20000, li: '.upgrade4', button: '.buyUpgrade4', purchased: false,
+		message: 'EMR Upgrade Purchased - Marksman KPS is now 8.25',
+		apply: () => {
+			units.marksman.kps = 8.25;
+			setText('mmPwr', '8.25');
+		},
+	},
+	{
+		cost: 250000, reveal: 200000, li: '.upgrade5', button: '.buyUpgrade5', purchased: false,
+		message: 'Close Air Support Purchased - 50% chance to kill 100000 every 5 seconds',
+		apply: () => startCloseAirSupport(),
+	},
+	{
+		cost: 1200000, reveal: 1000000, li: '.upgrade6', button: '.buyUpgrade6', purchased: false,
+		message: 'Double Tap Purchased - Earn 3% of your total Kills Per Second.',
+		apply: () => { game.doubleTap = true; },
+	},
+];
+
+
+
+// ======== DOM Helpers ========
+
+const setText = (id, value) => {
+	document.getElementById(id).textContent = value;
 };
 
-function buyUpgrade4(){
-    var upg4Cost = 25000;
-    if(kills >= upg4Cost && prevUpg3 == true){
-    	kills = kills - upg4Cost;
-        document.getElementById('upgrade4').innerHTML = ('EMR Upgrade Purchased - Marksman KPS is now 13.25');
-        document.getElementById('kills').innerHTML = kills.toFixed(2);
-        document.getElementById('mmPwr').innerHTML = ('13.25');
-        mmUpg = true;
-        prevUpg4 = true;
-    };
+const setVisible = (selector, visible) => {
+	const el = document.querySelector(selector);
+	if (el) {
+		el.hidden = !visible;
+	}
 };
 
-function buyUpgrade5(){
-    var upg5Cost = 250000;
-    if(kills >= upg5Cost && prevUpg4 == true){
-    	kills = kills - upg5Cost;
-        document.getElementById('upgrade5').innerHTML = ('Close Air Support Purchased - 50% chance to kill 100,000 every 5 seconds');
-        document.getElementById('kills').innerHTML = kills.toFixed(2);
-		setInterval(function () {
-			i = (Math.floor(Math.random() * 10));
-				if (i >= 6) {
-					addc(100000);
-				}
-			}, 5000);
-        prevUpg5 = true;
-    };
-};
-
-function buyUpgrade6(){
-    var upg6Cost = 1200000;
-    if(kills >= upg6Cost && prevUpg5 == true){
-    	kills = kills - upg6Cost;
-        document.getElementById('upgrade6').innerHTML = ('Double Tap Purchased - Earn 3% of your total Kills Per Second.');
-        document.getElementById('kills').innerHTML = kills.toFixed(2);
-        rate = true;
-        prevUpg6 = true;
-    };
+const setDisabled = (selector, disabled) => {
+	const el = document.querySelector(selector);
+	if (el) {
+		el.disabled = disabled;
+	}
 };
 
 
 
+// ======== The Barracks ========
 
+const unitCost = (unit) => Math.floor(unit.baseCost * 1.1 ** unit.count);
 
-
-
-
-
-
-// The Barracks
-
-function buyRecruit(){
-    var bootCost = Math.floor(50 * Math.pow(1.1,boots));     			//works out the cost of this unit
-    if(kills >= bootCost){                                   			//checks that the player can afford the unit
-        boots = boots + 1;                                   			//increases number of boots
-    	kills = kills - bootCost;                          				//removes the kills spent
-        document.getElementById('boots').innerHTML = boots;  			//updates the number of boots for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(50 * Math.pow(1.1,boots));       			//works out the cost of the next unit
-    document.getElementById('bootCost').innerHTML = nextCost;  			//updates the unit cost for the user
+const canBuyUnit = (unit) => {
+	const hasCrew = !unit.needs || units[unit.needs.unit].count >= unit.needs.amount;
+	return game.kills >= unitCost(unit) && hasCrew;
 };
 
-function buyMarksman(){
-    var mmCost = Math.floor(350 * Math.pow(1.1,mm));     				//works out the cost of this unit
-    var mmBoots = 1;
-    if(kills >= mmCost && boots >= mmBoots){                			//checks that the player can afford the unit
-        mm = mm + 1;                                   					//increases number of mm
-    	kills = kills - mmCost;                          				//removes the kills spent
-    	boots = boots - mmBoots;										//removes the boots spent
-        document.getElementById('mm').innerHTML = mm;  					//updates the number of mm for the user
-        document.getElementById('boots').innerHTML = boots;  			//updates the number of boots for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(350 * Math.pow(1.1,mm));       			//works out the cost of the next unit
-    document.getElementById('mmCost').innerHTML = nextCost;  			//updates the unit cost for the user
+function buyUnit(key) {
+	const unit = units[key];
+	if (canBuyUnit(unit)) {
+		game.kills -= unitCost(unit);
+		unit.count += 1;
+		setText(unit.countId, unit.count);
+
+		if (unit.needs) {
+			const crew = units[unit.needs.unit];
+			crew.count -= unit.needs.amount;
+			setText(crew.countId, crew.count);
+		}
+
+		setText(unit.costId, unitCost(unit));
+		setText('kills', game.kills.toFixed(2));
+	}
+	updateButtons();
+}
+
+
+
+// ======== The Upgrades ========
+
+const canBuyUpgrade = (index) => {
+	const upgrade = upgrades[index];
+	const previousBought = index === 0 || upgrades[index - 1].purchased;
+	return !upgrade.purchased && previousBought && game.kills >= upgrade.cost;
 };
 
-function buyCrewWpn(){
-    var cswCost = Math.floor(3750 * Math.pow(1.1,csw));     				//works out the cost of this unit
-    var cswBoots = 3;
-    if(kills >= cswCost && boots >= cswBoots){                          //checks that the player can afford the unit
-        csw = csw + 1;                                   				//increases number of csw
-    	kills = kills - cswCost;                          				//removes the kills spent
-    	boots = boots - cswBoots;										//removes the boots spent
-        document.getElementById('csw').innerHTML = csw;					//updates the number of csw for the user
-        document.getElementById('boots').innerHTML = boots;  			//updates the number of boots for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(3750 * Math.pow(1.1,csw));       			//works out the cost of the next unit
-    document.getElementById('cswCost').innerHTML = nextCost;  			//updates the unit cost for the user
-};
+function buyUpgrade(index) {
+	const upgrade = upgrades[index];
+	if (canBuyUpgrade(index)) {
+		game.kills -= upgrade.cost;
+		upgrade.purchased = true;
+		document.querySelector(upgrade.li).textContent = upgrade.message;
+		upgrade.apply();
+		setText('kills', game.kills.toFixed(2));
+	}
+	updateButtons();
+}
 
-function buyIFV(){
-    var ifvCost = Math.floor(24750 * Math.pow(1.1,ifv));     			//works out the cost of this unit
-    var ifvBoots = 5;
-    if(kills >= ifvCost && boots >= ifvBoots){                          //checks that the player can afford the unit
-        ifv = ifv + 1;                                   				//increases number of ifv
-    	kills = kills - ifvCost;                          				//removes the kills spent
-    	boots = boots - ifvBoots;										//removes the boots spent
-        document.getElementById('ifv').innerHTML = ifv;					//updates the number of boots for the user
-        document.getElementById('boots').innerHTML = boots;  			//updates the number of ifv for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(24750 * Math.pow(1.1,ifv));       			//works out the cost of the next unit
-    document.getElementById('ifvCost').innerHTML = nextCost;  			//updates the unit cost for the user
-};
-
-function buySpecOps(){
-    var spcCost = Math.floor(129500 * Math.pow(1.1,spc));     			//works out the cost of this unit
-    var spcMM = 1;
-    if(kills >= spcCost && mm >= spcMM){                          		//checks that the player can afford the unit
-        spc = spc + 1;                                   				//increases number of spc
-    	kills = kills - spcCost;                          				//removes the kills spent
-    	mm = mm - spcMM;												//removes the mm spent
-        document.getElementById('spc').innerHTML = spc;					//updates the number of mm for the user
-        document.getElementById('mm').innerHTML = mm;  					//updates the number of spc for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(129500 * Math.pow(1.1,spc));       		//works out the cost of the next unit
-    document.getElementById('spcCost').innerHTML = nextCost;  			//updates the unit cost for the user
-};
-
-function buyHeavy(){
-    var hvyCost = Math.floor(1880000 * Math.pow(1.1,hvy));     			//works out the cost of this unit
-    var hvyMM = 1;
-    if(kills >= hvyCost && mm >= hvyMM){                          		//checks that the player can afford the unit
-        hvy = hvy + 1;                                   				//increases number of hvy
-    	kills = kills - hvyCost;                          				//removes the kills spent
-    	mm = mm - hvyMM;												//removes the mm spent
-        document.getElementById('hvy').innerHTML = hvy;					//updates the number of mm for the user
-        document.getElementById('mm').innerHTML = mm;  					//updates the number of hvy for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(1880000 * Math.pow(1.1,hvy));       		//works out the cost of the next unit
-    document.getElementById('hvyCost').innerHTML = nextCost;  			//updates the unit cost for the user
-};
-
-function buyF15(){
-    var f15Cost = Math.floor(14990000 * Math.pow(1.1,f15));     			//works out the cost of this unit
-    var f15spc = 1;
-    if(kills >= f15Cost && spc >= f15spc){                          	//checks that the player can afford the unit
-        f15 = f15 + 1;                                   				//increases number of f15
-    	kills = kills - f15Cost;                          				//removes the kills spent
-    	spc = spc - f15spc;												//removes the spc spent
-        document.getElementById('f15').innerHTML = f15;					//updates the number of spc for the user
-        document.getElementById('spc').innerHTML = spc;  				//updates the number of f15 for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(14990000 * Math.pow(1.1,f15));       		//works out the cost of the next unit
-    document.getElementById('f15Cost').innerHTML = nextCost;  			//updates the unit cost for the user
-};
-
-function buyB1B(){
-    var b1bCost = Math.floor(145670000 * Math.pow(1.1,b1b));     		//works out the cost of this unit
-    var b1bspc = 4;
-    if(kills >= b1bCost && spc >= b1bspc){                          	//checks that the player can afford the unit
-        b1b = b1b + 1;                                   				//increases number of b1b
-    	kills = kills - b1bCost;                          				//removes the kills spent
-    	spc = spc - b1bspc;												//removes the spc spent
-        document.getElementById('b1b').innerHTML = b1b;					//updates the number of spc for the user
-        document.getElementById('spc').innerHTML = spc;  				//updates the number of b1b for the user
-        document.getElementById('kills').innerHTML = kills.toFixed(2);  //updates the number of kills for the user
-    };
-    var nextCost = Math.floor(145670000 * Math.pow(1.1,b1b));       		//works out the cost of the next unit
-    document.getElementById('b1bCost').innerHTML = nextCost;  			//updates the unit cost for the user
-};
-
-
-
-
-
-
-
-
-
+function startCloseAirSupport() {
+	setInterval(() => {
+		if (Math.random() < 0.5) {
+			addKills(100000);
+		}
+	}, 5000);
+}
 
 
 
 // ======== The Main Click Function ========
 
 function addc(number) {
-	if (upgrade == true ) {
-		kills = kills + ((number * upgradeVal));
-	} else {
-		kills = kills + number;
-	};
-
-	if (rate == true) {
-		kills = kills + (total * 0.03);
-	} 
-
-	document.getElementById("kills").innerHTML = kills.toFixed(2);
-	//Disable/Enable buttons based on whether you can afford the unit or upgrade
-	if (kills < 50) {
-		$('.buyRecruit').attr('disabled','disabled');
-	} else {
-		$('.buyRecruit').removeAttr('disabled');
-	};
-	if (kills < 350 || boots < 1) {
-		$('.buyMarksman').attr('disabled','disabled');
-	} else {
-		$('.buyMarksman').removeAttr('disabled');
-	};
-	if (kills < 3750 || boots < 3) {
-		$('.buyCrewWpn').attr('disabled','disabled');
-	} else {
-		$('.buyCrewWpn').removeAttr('disabled');
-	};
-	if (kills < 24750 || boots < 5) {
-		$('.buyIFV').attr('disabled','disabled');
-	} else {
-		$('.buyIFV').removeAttr('disabled');
-	};
-	if (kills < 129500 || mm < 1) {
-		$('.buySpecOps').attr('disabled','disabled');
-	} else {
-		$('.buySpecOps').removeAttr('disabled');
-	};
-	if (kills < 1880000 || mm < 3) {
-		$('.buyHeavy').attr('disabled','disabled');
-	} else {
-		$('.buyHeavy').removeAttr('disabled');
-	};
-	if (kills < 14990000 || spc < 1) {
-		$('.buyF15').attr('disabled','disabled');
-	} else {
-		$('.buyF15').removeAttr('disabled');
-	};
-	if (kills < 145670000 || spc < 4) {
-		$('.buyB1B').attr('disabled','disabled');
-	} else {
-		$('.buyB1B').removeAttr('disabled');
-	};
-	if (kills < 125) {
-		$('.buyUpgrade1').attr('disabled','disabled');
-	} else {
-		$('.buyUpgrade1').removeAttr('disabled');
-	};
-	if (kills < 700 && prevUpg1 == true) {
-		$('.buyUpgrade2').attr('disabled','disabled');
-	} else {
-		$('.buyUpgrade2').removeAttr('disabled');
-	};
-	if (kills < 1950 && prevUpg2 == true) {
-		$('.buyUpgrade3').attr('disabled','disabled');
-	} else {
-		$('.buyUpgrade3').removeAttr('disabled');
-	};
-	if (kills < 25000 && prevUpg3 == true) {
-		$('.buyUpgrade4').attr('disabled','disabled');
-	} else {
-		$('.buyUpgrade4').removeAttr('disabled');
-	};
-	if (kills < 250000 && prevUpg4 == true) {
-		$('.buyUpgrade5').attr('disabled','disabled');
-	} else {
-		$('.buyUpgrade5').removeAttr('disabled');
-	};
-	if (kills < 1200000 && prevUpg5 == true) {
-		$('.buyUpgrade5').attr('disabled','disabled');
-	} else {
-		$('.buyUpgrade5').removeAttr('disabled');
-	};
-
-	//Show buttons as you earn appropriate number of kills
-	if (kills > 74) {
-		$('.marksman').show();
+	let earned = number * game.clickBonus;
+	if (game.doubleTap) {
+		earned += game.kps * 0.03;
 	}
-	if (kills > 450) {
-		$('.cwpn').show();
-	}
-	if (kills > 3449) {
-		$('.ifvs').show();
-	}
-	if (kills > 19499) {
-		$('.specops').show();
-	}
-	if (kills > 719999) {
-		$('.heavy').show();
-	}
-	if (kills > 2900000) {
-		$('.f15').show();
-	}
-	if (kills > 29000000) {
-		$('.b1b').show();
-	}
-	if (kills > 500) {
-		$('.upgrade2').show();
-	}
-	if (kills > 1500) {
-		$('.upgrade3').show();
-	}
-	if (kills > 20000) {
-		$('.upgrade4').show();
-	}
-	if (kills > 200000) {
-		$('.upgrade5').show();
-	}
-	if (kills > 1000000) {
-		$('.upgrade6').show();
-	}
+	addKills(earned);
 }
 
-// Update the DOM
+function addKills(number) {
+	game.kills += number;
+	setText('kills', game.kills.toFixed(2));
+	updateButtons();
+}
+
+function updateButtons() {
+	for (const unit of Object.values(units)) {
+		setDisabled(unit.button, !canBuyUnit(unit));
+		if (game.kills > unit.reveal) {
+			setVisible(unit.li, true);
+		}
+	}
+
+	upgrades.forEach((upgrade, index) => {
+		setDisabled(upgrade.button, !canBuyUpgrade(index));
+		if (game.kills > upgrade.reveal) {
+			setVisible(upgrade.li, true);
+		}
+	});
+}
 
 
-window.setInterval(function(){
 
-	if (bootUpg == true) {
-		bootPwr = (Math.floor(Math.random() * 3) + 1);
-	} else {
-		bootPwr = (Math.random().toFixed(2));
-	};
-	addc(boots * bootPwr);
+// ======== Kills Per Second ========
 
-	if (mmUpg == true) {
-		mmPwr = 13.25;
-	};
-	addc(mm * mmPwr);
+// Each recruit rolls separately: 0 - 1 kills, or 1 - 3 with Better Drill Instructors
+const rollRecruit = () => (game.betterRecruits ? Math.floor(Math.random() * 3) + 1 : Math.random());
 
-	addc(csw * 25);
-	addc(ifv * 175);
-	addc(spc * 1250);
-	addc(hvy * 28000);
-	addc(f15 * 145500);
-	addc(b1b * 2567000);
+const rollRecruitKills = () => {
+	let recruitKills = 0;
+	for (let i = 0; i < units.recruit.count; i++) {
+		recruitKills += rollRecruit();
+	}
+	return recruitKills;
+};
 
-	total = ((boots * bootPwr) + (mm * mmPwr) + (csw * 25) + (ifv * 175) + (spc * 1250) + (hvy * 28000) + (f15 * 145500) + (b1b * 2567000)).toFixed(2);	
+function earnKillsPerSecond() {
+	const unitKills = Object.values(units).reduce((sum, unit) => sum + unit.count * unit.kps, 0);
+	game.kps = rollRecruitKills() + unitKills;
 
-	document.getElementById('kps').innerHTML = total;
+	addKills(game.kps);
+	setText('kps', game.kps.toFixed(2));
+}
 
-}, 1000);
+
+
+// ======== Setup ========
+
+// Hide units and upgrades until you can afford them (the first of each stays visible)
+for (const unit of Object.values(units)) {
+	setVisible(unit.li, unit.reveal === 0);
+}
+for (const upgrade of upgrades) {
+	setVisible(upgrade.li, upgrade.reveal === 0);
+}
+
+document.querySelector('.clicker').addEventListener('click', () => addc(1));
+
+for (const [key, unit] of Object.entries(units)) {
+	document.querySelector(unit.button).addEventListener('click', () => buyUnit(key));
+}
+
+upgrades.forEach((upgrade, index) => {
+	document.querySelector(upgrade.button).addEventListener('click', () => buyUpgrade(index));
+});
+
+updateButtons();
+setInterval(earnKillsPerSecond, 1000);
