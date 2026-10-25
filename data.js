@@ -1,4 +1,4 @@
-export const VERSION = '1.1';
+export const VERSION = '1.1.1';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 export const UNITS = [

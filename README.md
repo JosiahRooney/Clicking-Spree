@@ -21,7 +21,7 @@ A little incremental game made in JavaScript.
 
 ## How to run
 
-The game uses ES modules, which browsers block on `file://`, so serve the folder over HTTP:
+To run the game, you need `http-server` installed, or another way of serving HTML. Opening the file directly in the browser won't work because of the usage of modules.
 
 ```
 npx http-server
