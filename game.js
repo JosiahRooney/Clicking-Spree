@@ -1,16 +1,25 @@
 import {
 	UNITS, UPGRADES, SKILLS, TIER_REQUIREMENTS, XP_BASE, XP_GROWTH,
-	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, HVT,
+	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, HVT, LEVELS,
 } from './data.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
 const upgradeDef = Object.fromEntries(UPGRADES.map((def) => [def.id, def]));
 const skillDef = Object.fromEntries(SKILLS.map((def) => [def.id, def]));
+export const levelDef = Object.fromEntries(LEVELS.map((def) => [def.id, def]));
 
 const freshState = () => ({
 	kills: 0,
 	kps: 0,
 	xp: 0,
+	// Every kill ever earned. Spending never lowers it.
+	lifetimeKills: 0,
+	map: {
+		activeLevel: LEVELS[0].id,
+		// Kills earned while each level was active.
+		progress: Object.fromEntries(LEVELS.map((def) => [def.id, 0])),
+		cleared: Object.fromEntries(LEVELS.map((def) => [def.id, false])),
+	},
 	activeTab: 'barracks',
 	units: Object.fromEntries(UNITS.map((def) => [def.id, 0])),
 	upgrades: Object.fromEntries(UPGRADES.map((def) => [def.id, false])),
@@ -24,6 +33,11 @@ const freshState = () => ({
 	// Not saved: lets the UI notice a new critical hit.
 	attacks: 0,
 	lastAttack: { amount: 0, crit: false },
+	// Not saved: the running boss fight, or null. Reloading mid-fight is the same as losing it.
+	boss: null,
+	// Not saved: lets the UI notice a level start and announce it.
+	levelStarts: 0,
+	lastLevelStart: { levelId: null, defeatedBoss: null },
 });
 
 // Other modules hold a reference to this object, so it is only ever mutated, never reassigned.
@@ -145,6 +159,17 @@ export const canBuyUpgrade = (def, s = state) => {
 	return !s.upgrades[def.id] && previousBought && s.kills >= upgradeCost(def, s);
 };
 
+export const levelAvailable = (id, s = state) => {
+	const index = LEVELS.findIndex((def) => def.id === id);
+	return index === 0 || s.map.cleared[LEVELS[index - 1].id];
+};
+
+export const levelBeat = (id, s = state) => s.map.progress[id] >= levelDef[id].killsRequired;
+
+// Cleared levels never fight again, so a boss can only be defeated once per level.
+export const canFightBoss = (id, s = state) => !s.boss
+	&& levelAvailable(id, s) && levelBeat(id, s) && !s.map.cleared[id];
+
 
 
 // ======== Actions ========
@@ -154,7 +179,63 @@ function earn(amount) {
 	const earned = amount * stats().allKillsMultiplier;
 	state.kills += earned;
 	state.xp += earned;
+	state.lifetimeKills += earned;
+	state.map.progress[state.map.activeLevel] += earned;
+	damageBoss(earned);
 	return earned;
+}
+
+function startLevel(id, defeatedBoss = null) {
+	state.map.activeLevel = id;
+	state.levelStarts += 1;
+	state.lastLevelStart = { levelId: id, defeatedBoss };
+}
+
+export function selectLevel(id) {
+	if (!state.boss && levelAvailable(id) && id !== state.map.activeLevel) {
+		startLevel(id);
+	}
+}
+
+export function startBoss(id) {
+	if (!canFightBoss(id)) {
+		return;
+	}
+	const { hp, seconds } = levelDef[id].boss;
+	state.boss = { levelId: id, hp, maxHp: hp, timeLeft: seconds };
+}
+
+function winBoss() {
+	const id = state.boss.levelId;
+	state.boss = null;
+	// The only place cleared flips to true, and it happens once per level:
+	// one-time clear rewards belong here, never in selectLevel or on later visits.
+	state.map.cleared[id] = true;
+	const next = LEVELS[LEVELS.findIndex((def) => def.id === id) + 1];
+	if (next) {
+		startLevel(next.id, levelDef[id].boss.name);
+	}
+}
+
+function damageBoss(amount) {
+	if (!state.boss) {
+		return;
+	}
+	state.boss.hp -= amount;
+	if (state.boss.hp <= 0) {
+		winBoss();
+	}
+}
+
+// Losing costs nothing: the fight just ends and the boss can be fought again.
+function updateBoss() {
+	if (!state.boss) {
+		return;
+	}
+	state.boss.timeLeft -= 1;
+	if (state.boss.timeLeft <= 0) {
+		state.boss = null;
+	}
 }
 
 export function attack() {
@@ -254,6 +335,8 @@ export function tick() {
 	const crit = tickCritChance > 0 && Math.random() < tickCritChance;
 	earn(crit ? state.kps * TICK_CRIT_MULTIPLIER : state.kps);
 	updateHvt();
+	// After earn(), so the last second of KPS lands before time runs out.
+	updateBoss();
 }
 
 export function closeAirSupportTick() {
@@ -298,12 +381,14 @@ export const serialize = (s = state) => JSON.stringify({
 	skills: s.skills,
 	revealed: s.revealed,
 	hvt: s.hvt,
+	lifetimeKills: s.lifetimeKills,
+	map: s.map,
 });
 
 const clampRank = (value, def) => Math.min(def.maxRank, Math.max(0, Math.floor(Number(value) || 0)));
 
 // Returns false (leaving state untouched) if json is missing or invalid.
-// Accepts older saves: upgrades as an array of booleans in chain order, and no xp/skills/hvt.
+// Accepts older saves: upgrades as an array of booleans in chain order, and no xp/skills/hvt/map.
 export function deserialize(json, s = state) {
 	let save;
 	try {
@@ -338,8 +423,24 @@ export function deserialize(json, s = state) {
 	}
 	fresh.hvt.activeFor = Number(save.hvt?.activeFor) || 0;
 	fresh.hvt.nextIn = Number.isFinite(save.hvt?.nextIn) ? save.hvt.nextIn : null;
+	// Saves before 1.5 have no lifetime count, but xp has always matched every kill earned.
+	fresh.lifetimeKills = Number(save.lifetimeKills) || fresh.xp || fresh.kills;
+	for (const def of LEVELS) {
+		fresh.map.progress[def.id] = Math.max(0, Number(save.map?.progress?.[def.id]) || 0);
+		fresh.map.cleared[def.id] = save.map?.cleared?.[def.id] === true;
+	}
+	const savedLevel = save.map?.activeLevel;
+	if (levelDef[savedLevel] && levelAvailable(savedLevel, fresh)) {
+		fresh.map.activeLevel = savedLevel;
+	}
 	updateReveals(fresh);
 
-	Object.assign(s, fresh, { activeTab: s.activeTab, attacks: s.attacks, lastAttack: s.lastAttack });
+	Object.assign(s, fresh, {
+		activeTab: s.activeTab,
+		attacks: s.attacks,
+		lastAttack: s.lastAttack,
+		levelStarts: s.levelStarts,
+		lastLevelStart: s.lastLevelStart,
+	});
 	return true;
 }

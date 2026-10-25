@@ -1,6 +1,6 @@
 import {
 	state, attack, buyUnit, buyUpgrade, buySkill, resetSkills, resetGame, clickHvt, setTab,
-	tick, closeAirSupportTick, updateReveals, serialize, deserialize,
+	selectLevel, startBoss, tick, closeAirSupportTick, updateReveals, serialize, deserialize,
 } from './game.js';
 import { App } from './ui.js';
 
@@ -36,14 +36,14 @@ function load() {
 }
 
 function reset() {
-	if (!confirm('Reset the game? All kills, units, upgrades, XP and skills will be lost, including your save.')) {
+	if (!confirm('Reset the game? All kills, units, upgrades, XP, skills and map progress will be lost, including your save.')) {
 		return;
 	}
 	resetGame();
 	localStorage.removeItem(saveKey);
 }
 
-const app = App(withRender({ attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, save, load, reset }));
+const app = App(withRender({ attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, selectLevel, startBoss, save, load, reset }));
 document.getElementById('app').append(app.el);
 
 load();

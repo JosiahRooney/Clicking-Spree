@@ -41,10 +41,10 @@ Then open the localhost URL it prints.
 
 - Add more units and upgrades
 - Add original artwork
-- Add levels/objectives
 
 ## Changelog
 
+- v1.5 - world map with 4 zones of 4 levels each, a header level panel with new-level announcements, lifetime kills for level progress, and timed boss fights to clear each level
 - v1.4 - compact unit rows, a Reset button to start a new game, and floating damage numbers for every click (red for crits)
 - v1.3 - sticky, slimmer tabs with badges for buyable upgrades and unspent skill points; unlocked tiers drop their requirement text
 - v1.2 - experience, levels, and a skill tree (Assault, Intel, Logistics)
