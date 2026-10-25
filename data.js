@@ -1,4 +1,4 @@
-export const VERSION = '1.6';
+export const VERSION = '1.8';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -37,6 +37,19 @@ export const UNITS = [
 		image: 'images/mortar.png',
 	},
 	{
+		id: 'hemet',
+		group: 'vehicle',
+		name: 'HEMET',
+		baseCost: 10_000,
+		kps: 0,
+		// Supplies per second, before supplyMultiplier. Combat units leave this off.
+		sps: 1,
+		needs: { unit: 'recruit', amount: 2, label: 'Recruits' },
+		reveal: 1500,
+		description: 'A HEMET cargo truck. Hauls supplies instead of fighting. Crews 2 recruits.',
+		image: 'images/hemet.png',
+	},
+	{
 		id: 'ifv',
 		group: 'vehicle',
 		name: 'Infantry Fighting Vehicle',
@@ -44,7 +57,7 @@ export const UNITS = [
 		kps: 175,
 		needs: { unit: 'recruit', amount: 5, label: 'Recruits' },
 		reveal: 3449,
-		description: 'An armored infantry fighting vehicle. Crews 5 recruits. First vehicle available.',
+		description: 'An armored infantry fighting vehicle. Crews 5 recruits.',
 		image: 'images/ifv.png',
 	},
 	{
@@ -91,6 +104,26 @@ export const UNITS = [
 		description: 'The B-1 Lancer is a four-engine supersonic variable-sweep wing, jet-powered strategic bomber. This powerful aircraft requires 4 specialists to crew it.',
 		image: 'images/B-1-09.png',
 	},
+];
+
+// ======== Buildings ========
+
+// Bought with supplies. Each one produces its unit for free (no crew used).
+// seconds: time for one building to produce one unit. Every extra building adds BUILDING_SPEEDUP of the
+// first one's rate, so time per unit = seconds / (1 + BUILDING_SPEEDUP * (count - 1)): 5s, 4s, 3.3s, ...
+// Past one unit per second, the leftover rate carries over and more units come out each second.
+export const BUILDING_COST_GROWTH = 1.15;
+export const BUILDING_SPEEDUP = 0.25;
+export const BUILDINGS = [
+	{ id: 'barracks', unit: 'recruit', label: ['Recruit', 'Recruits'], name: 'Barracks', baseCost: 10, seconds: 5, description: 'Bunks, a drill field and a sergeant who never sleeps. Turns out fresh Recruits.' },
+	{ id: 'firingRange', unit: 'marksman', label: ['Marksman', 'Marksmen'], name: 'Firing Range', baseCost: 60, seconds: 15, description: 'Long lanes and steel targets. Trains Marksmen without using up your Recruits.' },
+	{ id: 'armory', unit: 'crewWpn', label: ['Crew-Served Weapon', 'Crew-Served Weapons'], name: 'Armory', baseCost: 300, seconds: 30, description: 'Assembles and crews heavy weapons. Produces Crew-Served Weapons, crew included.' },
+	{ id: 'supplyDepot', unit: 'hemet', label: ['HEMET', 'HEMETs'], name: 'Supply Depot', baseCost: 600, seconds: 45, description: 'Fuel, ramps, and a loading crew. Rolls out HEMET cargo trucks, crew included.' },
+	{ id: 'vehicleDepot', unit: 'ifv', label: ['IFV', 'IFVs'], name: 'Vehicle Depot', baseCost: 1_000, seconds: 60, description: 'A maintenance yard that rolls out crewed Infantry Fighting Vehicles.' },
+	{ id: 'trainingCompound', unit: 'specOps', label: ['Operative', 'Operatives'], name: 'Training Compound', baseCost: 5_000, seconds: 90, description: 'A secluded selection course that graduates Special Forces Operatives.' },
+	{ id: 'tankFactory', unit: 'heavy', label: ['Tank', 'Tanks'], name: 'Tank Factory', baseCost: 50_000, seconds: 150, description: 'An assembly line for main battle tanks, delivered with a full crew.' },
+	{ id: 'airfield', unit: 'f15', label: ['F-15', 'F-15s'], name: 'Airfield', baseCost: 500_000, seconds: 210, description: 'Runways, hangars and pilots. Launches F-15 Fighter Jets.' },
+	{ id: 'bomberHangar', unit: 'b1b', label: ['B-1', 'B-1s'], name: 'Bomber Hangar', baseCost: 5_000_000, seconds: 300, description: 'A strategic hangar that fields a crewed B-1 Lancer every five minutes.' },
 ];
 
 // Array order is the upgrade chain: each upgrade requires the one before it.
@@ -319,48 +352,69 @@ export const BOSS_RETREAT_PENALTY = 0.2;
 // Array order is the unlock chain: each level needs the one before it cleared; the first level is always open.
 // killsRequired counts kills earned while the level is active. boss.seconds is the fight's time limit.
 // Boss power is hp / seconds. hp is sized from a simulated playthrough (clicking 5/s, buying the best
-// power per kill) so that after reaching killsRequired, a typical player grinds about 30 seconds on the
-// first level, ramping to about 5 minutes on the last, before their power matches the boss.
+// power per kill, farming the latest cleared level for supplies and buying buildings) so that after
+// reaching killsRequired, a typical player grinds about 30 seconds on the first level, ramping to about
+// 5 minutes on the last, before their power matches the boss. From Zone 3 on, the grind assumes buildings:
+// without farming, late bosses take far longer.
 export const ZONES = [
 	{
 		id: 'desert', name: 'Operation Desert Anvil', faction: 'Insurgent Militia',
 		levels: [
 			{ id: 'desert1', name: 'Checkpoint Raid', killsRequired: 100, boss: { name: 'Militia Captain', hp: 240, seconds: 30 } },
-			{ id: 'desert2', name: 'Supply Route', killsRequired: 500, boss: { name: 'Convoy Commander', hp: 940, seconds: 30 } },
-			{ id: 'desert3', name: 'Oasis Compound', killsRequired: 2000, boss: { name: 'Arms Dealer', hp: 4_700, seconds: 30 } },
-			{ id: 'desert4', name: 'Mountain Caves', killsRequired: 5000, boss: { name: 'Militia Warlord', hp: 5_100, seconds: 30 } },
+			{ id: 'desert2', name: 'Supply Route', killsRequired: 500, boss: { name: 'Convoy Commander', hp: 1_300, seconds: 30 } },
+			{ id: 'desert3', name: 'Oasis Compound', killsRequired: 2000, boss: { name: 'Arms Dealer', hp: 6_900, seconds: 30 } },
+			{ id: 'desert4', name: 'Mountain Caves', killsRequired: 5000, boss: { name: 'Militia Warlord', hp: 13_000, seconds: 30 } },
 		],
 	},
 	{
 		id: 'jungle', name: 'Operation Jungle Viper', faction: 'Guerrilla Cartel',
 		levels: [
-			{ id: 'jungle1', name: 'River Crossing', killsRequired: 20000, boss: { name: 'Sniper Nest', hp: 6_500, seconds: 35 } },
-			{ id: 'jungle2', name: 'Hidden Airstrip', killsRequired: 60000, boss: { name: 'Smuggler Pilot', hp: 210_000, seconds: 35 } },
-			{ id: 'jungle3', name: 'Cartel Plantation', killsRequired: 150000, boss: { name: 'Enforcer', hp: 1_500_000, seconds: 35 } },
-			{ id: 'jungle4', name: 'Temple Fortress', killsRequired: 400000, boss: { name: 'Cartel Kingpin', hp: 170_000_000, seconds: 35 } },
+			{ id: 'jungle1', name: 'River Crossing', killsRequired: 20000, boss: { name: 'Sniper Nest', hp: 280_000, seconds: 35 } },
+			{ id: 'jungle2', name: 'Hidden Airstrip', killsRequired: 60000, boss: { name: 'Smuggler Pilot', hp: 3_300_000, seconds: 35 } },
+			{ id: 'jungle3', name: 'Cartel Plantation', killsRequired: 150000, boss: { name: 'Enforcer', hp: 170_000_000, seconds: 35 } },
+			{ id: 'jungle4', name: 'Temple Fortress', killsRequired: 400000, boss: { name: 'Cartel Kingpin', hp: 16_000_000_000, seconds: 35 } },
 		],
 	},
 	{
 		id: 'tundra', name: 'Operation Iron Frost', faction: 'Northern Mechanized Army',
 		levels: [
-			{ id: 'tundra1', name: 'Frozen Outpost', killsRequired: 1000000, boss: { name: 'Recon Battalion', hp: 13_000_000_000, seconds: 40 } },
-			{ id: 'tundra2', name: 'Rail Yard', killsRequired: 3000000, boss: { name: 'Armored Train', hp: 19_000_000_000, seconds: 40 } },
-			{ id: 'tundra3', name: 'Missile Silo', killsRequired: 8000000, boss: { name: 'Silo Commander', hp: 22_000_000_000, seconds: 40 } },
-			{ id: 'tundra4', name: 'Iron Citadel', killsRequired: 20000000, boss: { name: 'Tank General', hp: 25_000_000_000, seconds: 40 } },
+			{ id: 'tundra1', name: 'Frozen Outpost', killsRequired: 1000000, boss: { name: 'Recon Battalion', hp: 26_000_000_000, seconds: 40 } },
+			{ id: 'tundra2', name: 'Rail Yard', killsRequired: 3000000, boss: { name: 'Armored Train', hp: 32_000_000_000, seconds: 40 } },
+			{ id: 'tundra3', name: 'Missile Silo', killsRequired: 8000000, boss: { name: 'Silo Commander', hp: 37_000_000_000, seconds: 40 } },
+			{ id: 'tundra4', name: 'Iron Citadel', killsRequired: 20000000, boss: { name: 'Tank General', hp: 43_000_000_000, seconds: 40 } },
 		],
 	},
 	{
 		id: 'blackSky', name: 'Operation Black Sky', faction: 'Rogue Superpower Command',
 		levels: [
-			{ id: 'blackSky1', name: 'Coastal Radar', killsRequired: 50000000, boss: { name: 'Air Defense Grid', hp: 32_000_000_000, seconds: 45 } },
-			{ id: 'blackSky2', name: 'Carrier Group', killsRequired: 150000000, boss: { name: 'Fleet Admiral', hp: 37_000_000_000, seconds: 45 } },
-			{ id: 'blackSky3', name: 'Command Bunker', killsRequired: 400000000, boss: { name: 'Strategic Command', hp: 40_000_000_000, seconds: 45 } },
-			{ id: 'blackSky4', name: 'Capital Strike', killsRequired: 1000000000, boss: { name: 'Supreme Commander', hp: 43_000_000_000, seconds: 45 } },
+			{ id: 'blackSky1', name: 'Coastal Radar', killsRequired: 50000000, boss: { name: 'Air Defense Grid', hp: 57_000_000_000, seconds: 45 } },
+			{ id: 'blackSky2', name: 'Carrier Group', killsRequired: 150000000, boss: { name: 'Fleet Admiral', hp: 66_000_000_000, seconds: 45 } },
+			{ id: 'blackSky3', name: 'Command Bunker', killsRequired: 400000000, boss: { name: 'Strategic Command', hp: 75_000_000_000, seconds: 45 } },
+			{ id: 'blackSky4', name: 'Capital Strike', killsRequired: 1000000000, boss: { name: 'Supreme Commander', hp: 85_000_000_000, seconds: 45 } },
 		],
 	},
 ];
 
+// ======== Supplies ========
+
+// First-clear supplies = killsRequired * SUPPLY_RATE * SUPPLY_LEVEL_GROWTH ** levelIndex (2 significant digits).
+// The growth term makes later levels pay more supplies per kill, so farming early levels is never the best option.
+export const SUPPLY_RATE = 0.1;
+export const SUPPLY_LEVEL_GROWTH = 1.25;
+// A repeat clear (no boss) pays this share of the first-clear reward.
+export const REPEAT_CLEAR_SHARE = 0.1;
+
+const roundTo2 = (n) => {
+	const magnitude = 10 ** (Math.floor(Math.log10(n)) - 1);
+	return Math.round(n / magnitude) * magnitude;
+};
+
 // Flat, ordered list of every level, with its zone and position for labels like "Zone 1 - Level 2".
-export const LEVELS = ZONES.flatMap((zone, z) => zone.levels.map((level, l) => ({
-	...level, zone: zone.id, zoneNumber: z + 1, levelNumber: l + 1,
-})));
+export const LEVELS = ZONES
+	.flatMap((zone, z) => zone.levels.map((level, l) => ({
+		...level, zone: zone.id, zoneNumber: z + 1, levelNumber: l + 1,
+	})))
+	.map((level, index) => ({
+		...level,
+		supplies: roundTo2(level.killsRequired * SUPPLY_RATE * SUPPLY_LEVEL_GROWTH ** index),
+	}));

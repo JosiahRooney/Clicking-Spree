@@ -1,12 +1,14 @@
 import {
 	UNITS, UPGRADES, SKILLS, TIER_REQUIREMENTS, XP_BASE, XP_GROWTH,
 	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, CAS_KILLS, CAS_INTERVAL, HVT, LEVELS,
-	POWER_CLICKS_PER_SECOND, BOSS_RETREAT_PENALTY,
+	POWER_CLICKS_PER_SECOND, BOSS_RETREAT_PENALTY, REPEAT_CLEAR_SHARE,
+	BUILDINGS, BUILDING_COST_GROWTH, BUILDING_SPEEDUP,
 } from './data.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
 const upgradeDef = Object.fromEntries(UPGRADES.map((def) => [def.id, def]));
 const skillDef = Object.fromEntries(SKILLS.map((def) => [def.id, def]));
+const buildingDef = Object.fromEntries(BUILDINGS.map((def) => [def.id, def]));
 export const levelDef = Object.fromEntries(LEVELS.map((def) => [def.id, def]));
 
 const freshState = () => ({
@@ -15,14 +17,21 @@ const freshState = () => ({
 	xp: 0,
 	// Every kill ever earned. Spending never lowers it.
 	lifetimeKills: 0,
+	supplies: 0,
 	map: {
 		activeLevel: LEVELS[0].id,
 		// Kills earned while each level was active.
 		progress: Object.fromEntries(LEVELS.map((def) => [def.id, 0])),
 		cleared: Object.fromEntries(LEVELS.map((def) => [def.id, false])),
 	},
-	activeTab: 'barracks',
+	activeTab: 'units',
 	units: Object.fromEntries(UNITS.map((def) => [def.id, 0])),
+	// How many of each unit were paid for with kills. Price grows from this, not from units on hand,
+	// so troops produced by buildings (or spent as crew) don't change the cost.
+	bought: Object.fromEntries(UNITS.map((def) => [def.id, 0])),
+	buildings: Object.fromEntries(BUILDINGS.map((def) => [def.id, 0])),
+	// Fraction of the next unit each building type has produced (always below 1).
+	buildingProgress: Object.fromEntries(BUILDINGS.map((def) => [def.id, 0])),
 	upgrades: Object.fromEntries(UPGRADES.map((def) => [def.id, false])),
 	skills: Object.fromEntries(SKILLS.map((def) => [def.id, 0])),
 	revealed: {
@@ -38,7 +47,9 @@ const freshState = () => ({
 	boss: null,
 	// Not saved: lets the UI notice a level start and announce it.
 	levelStarts: 0,
-	lastLevelStart: { levelId: null, defeatedBoss: null },
+	lastLevelStart: { levelId: null, defeatedBoss: null, supplies: 0 },
+	// Not saved: running totals of repeat clears, so the UI can batch them into one message.
+	repeatClears: { count: 0, supplies: 0 },
 	// Not saved: lets the UI notice a lost boss fight and announce the retreat.
 	bossLosses: 0,
 	lastBossLoss: { bossName: null, killsLost: 0 },
@@ -127,11 +138,13 @@ export const stats = (s = state) => ({
 	upgradeCostMultiplier: discountFactor(s, 'upgradeDiscount'),
 	costGrowth: 1.1 - effectTotal(s, 'costGrowthReduction'),
 	crewReduction: effectTotal(s, 'crewReduction'),
+	// Raises supplies per second from logistics units. Upgrades can add to this later.
+	supplyMultiplier: 1,
 });
 
 export const unitCost = (def, s = state) => {
 	const { unitCostMultiplier, costGrowth } = stats(s);
-	return Math.floor(def.baseCost * unitCostMultiplier(def) * costGrowth ** s.units[def.id]);
+	return Math.floor(def.baseCost * unitCostMultiplier(def) * costGrowth ** s.bought[def.id]);
 };
 
 export const upgradeCost = (def, s = state) => Math.floor(def.cost * stats(s).upgradeCostMultiplier);
@@ -143,6 +156,11 @@ export const unitKps = (def, s = state) => {
 	const base = def.id === 'marksman' ? stats(s).marksmanKps : def.kps;
 	return base * stats(s).kpsMultiplier(def);
 };
+
+// Supplies per second from one unit. Combat units have no sps, so they add nothing.
+export const unitSps = (def, s = state) => (def.sps ?? 0) * stats(s).supplyMultiplier;
+
+export const supplyPerSecond = (s = state) => UNITS.reduce((sum, def) => sum + s.units[def.id] * unitSps(def, s), 0);
 
 // What the player actually earns per second, including the all-kills bonus.
 export const displayKps = (s = state) => s.kps * stats(s).allKillsMultiplier;
@@ -193,6 +211,23 @@ export const levelAvailable = (id, s = state) => {
 	return index === 0 || s.map.cleared[LEVELS[index - 1].id];
 };
 
+// ======== Buildings ========
+
+export const buildingCost = (def, s = state) => Math.floor(def.baseCost * BUILDING_COST_GROWTH ** s.buildings[def.id]);
+
+// A building shows up once the unit it produces has been revealed.
+export const buildingRevealed = (def, s = state) => s.revealed.units[def.unit];
+
+export const canBuyBuilding = (def, s = state) => buildingRevealed(def, s) && s.supplies >= buildingCost(def, s);
+
+// Units per second from all buildings of this type: each one after the first adds BUILDING_SPEEDUP of the base rate.
+export const buildingRate = (def, s = state) => {
+	const count = s.buildings[def.id];
+	return count === 0 ? 0 : (1 + BUILDING_SPEEDUP * (count - 1)) / def.seconds;
+};
+
+export const repeatClearSupplies = (def) => def.supplies * REPEAT_CLEAR_SHARE;
+
 export const levelBeat = (id, s = state) => s.map.progress[id] >= levelDef[id].killsRequired;
 
 // Cleared levels never fight again, so a boss can only be defeated once per level.
@@ -210,18 +245,41 @@ function earn(amount) {
 	state.xp += earned;
 	state.lifetimeKills += earned;
 	state.map.progress[state.map.activeLevel] += earned;
+	repeatClears();
 	damageBoss(earned);
 	return earned;
 }
 
-function startLevel(id, defeatedBoss = null) {
+// A cleared level has no boss: every full killsRequired clears it again for a share of its supplies.
+// Done in one step so a huge tick on a small level doesn't loop.
+function repeatClears() {
+	const def = levelDef[state.map.activeLevel];
+	if (!state.map.cleared[def.id]) {
+		return;
+	}
+	const clears = Math.floor(state.map.progress[def.id] / def.killsRequired);
+	if (clears === 0) {
+		return;
+	}
+	const supplies = clears * repeatClearSupplies(def);
+	state.map.progress[def.id] -= clears * def.killsRequired;
+	state.supplies += supplies;
+	state.repeatClears.count += clears;
+	state.repeatClears.supplies += supplies;
+}
+
+function startLevel(id, defeatedBoss = null, supplies = 0) {
 	state.map.activeLevel = id;
 	state.levelStarts += 1;
-	state.lastLevelStart = { levelId: id, defeatedBoss };
+	state.lastLevelStart = { levelId: id, defeatedBoss, supplies };
 }
 
 export function selectLevel(id) {
 	if (!state.boss && levelAvailable(id) && id !== state.map.activeLevel) {
+		// Cleared levels count from zero on every visit; the front line keeps its progress.
+		if (state.map.cleared[id]) {
+			state.map.progress[id] = 0;
+		}
 		startLevel(id);
 	}
 }
@@ -239,10 +297,17 @@ function winBoss() {
 	state.boss = null;
 	// The only place cleared flips to true, and it happens once per level:
 	// one-time clear rewards belong here, never in selectLevel or on later visits.
+	// Bosses only exist on the front line, so a win always moves the player forward.
+	const def = levelDef[id];
 	state.map.cleared[id] = true;
-	const next = LEVELS[LEVELS.findIndex((def) => def.id === id) + 1];
+	state.map.progress[id] = 0;
+	state.supplies += def.supplies;
+	const next = LEVELS[LEVELS.indexOf(def) + 1];
 	if (next) {
-		startLevel(next.id, levelDef[id].boss.name);
+		startLevel(next.id, def.boss.name, def.supplies);
+	} else {
+		state.levelStarts += 1;
+		state.lastLevelStart = { levelId: id, defeatedBoss: def.boss.name, supplies: def.supplies };
 	}
 }
 
@@ -292,8 +357,29 @@ export function buyUnit(id) {
 	const crew = crewNeeded(def);
 	state.kills -= unitCost(def);
 	state.units[id] += 1;
+	state.bought[id] += 1;
 	if (def.needs) {
 		state.units[def.needs.unit] -= crew;
+	}
+}
+
+export function buyBuilding(id) {
+	const def = buildingDef[id];
+	if (!canBuyBuilding(def)) {
+		return;
+	}
+	state.supplies -= buildingCost(def);
+	state.buildings[id] += 1;
+}
+
+// Produced units are free: no kills and no crew. Leftover progress carries into the next second.
+function produceUnits() {
+	for (const def of BUILDINGS) {
+		const progress = state.buildingProgress[def.id] + buildingRate(def);
+		// The epsilon stops float error (e.g. 3 x 1/3 = 0.9999...) from delaying a unit by a second.
+		const made = Math.floor(progress + 1e-9);
+		state.buildingProgress[def.id] = Math.max(0, progress - made);
+		state.units[def.unit] += made;
 	}
 }
 
@@ -365,6 +451,9 @@ function updateHvt() {
 }
 
 export function tick() {
+	produceUnits();
+	// Logistics trucks pay supplies directly. This is not a kill, so it skips earn().
+	state.supplies += supplyPerSecond();
 	const { kpsMultiplier, tickCritChance } = stats();
 	const recruitKills = rollRecruitKills() * kpsMultiplier(unitDef.recruit);
 	const unitKills = UNITS.reduce((sum, def) => sum + state.units[def.id] * unitKps(def), 0);
@@ -415,12 +504,16 @@ export const serialize = (s = state) => JSON.stringify({
 	kills: s.kills,
 	xp: s.xp,
 	units: s.units,
+	bought: s.bought,
 	upgrades: s.upgrades,
 	skills: s.skills,
 	revealed: s.revealed,
 	hvt: s.hvt,
 	lifetimeKills: s.lifetimeKills,
 	map: s.map,
+	supplies: s.supplies,
+	buildings: s.buildings,
+	buildingProgress: s.buildingProgress,
 });
 
 const clampRank = (value, def) => Math.min(def.maxRank, Math.max(0, Math.floor(Number(value) || 0)));
@@ -443,8 +536,11 @@ export function deserialize(json, s = state) {
 
 	fresh.kills = Number(save.kills) || 0;
 	fresh.xp = Number(save.xp) || 0;
+	// Saves from before purchases were tracked separately: every unit on hand was bought.
+	const hasBought = save.bought && typeof save.bought === 'object';
 	for (const def of UNITS) {
 		fresh.units[def.id] = Number(save.units?.[def.id]) || 0;
+		fresh.bought[def.id] = hasBought ? Math.max(0, Math.floor(Number(save.bought[def.id]) || 0)) : fresh.units[def.id];
 		fresh.revealed.units[def.id] = save.revealed?.units?.[def.id] === true;
 	}
 	UPGRADES.forEach((def, index) => {
@@ -463,9 +559,22 @@ export function deserialize(json, s = state) {
 	fresh.hvt.nextIn = Number.isFinite(save.hvt?.nextIn) ? save.hvt.nextIn : null;
 	// Saves before 1.5 have no lifetime count, but xp has always matched every kill earned.
 	fresh.lifetimeKills = Number(save.lifetimeKills) || fresh.xp || fresh.kills;
+	// Saves before 1.7 have no supplies: pay out first clears already earned, and drop the full
+	// progress bars cleared levels used to keep so they don't count as instant repeat clears.
+	const hasSupplies = Number.isFinite(save.supplies);
+	fresh.supplies = hasSupplies ? Math.max(0, save.supplies) : 0;
 	for (const def of LEVELS) {
 		fresh.map.progress[def.id] = Math.max(0, Number(save.map?.progress?.[def.id]) || 0);
 		fresh.map.cleared[def.id] = save.map?.cleared?.[def.id] === true;
+		if (!hasSupplies && fresh.map.cleared[def.id]) {
+			fresh.map.progress[def.id] = 0;
+			fresh.supplies += def.supplies;
+		}
+	}
+	for (const def of BUILDINGS) {
+		fresh.buildings[def.id] = Math.max(0, Math.floor(Number(save.buildings?.[def.id]) || 0));
+		const progress = Number(save.buildingProgress?.[def.id]) || 0;
+		fresh.buildingProgress[def.id] = Math.min(Math.max(progress, 0), 0.999);
 	}
 	const savedLevel = save.map?.activeLevel;
 	if (levelDef[savedLevel] && levelAvailable(savedLevel, fresh)) {
@@ -481,6 +590,7 @@ export function deserialize(json, s = state) {
 		lastLevelStart: s.lastLevelStart,
 		bossLosses: s.bossLosses,
 		lastBossLoss: s.lastBossLoss,
+		repeatClears: s.repeatClears,
 	});
 	return true;
 }

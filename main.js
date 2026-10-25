@@ -1,19 +1,14 @@
 import {
-	state, attack, buyUnit, buyUpgrade, buySkill, resetSkills, resetGame, clickHvt, setTab,
+	state, attack, buyUnit, buyBuilding, buyUpgrade, buySkill, resetSkills, resetGame, clickHvt, setTab,
 	selectLevel, startBoss, tick, closeAirSupportTick, updateReveals, serialize, deserialize,
 } from './game.js';
 import { CAS_INTERVAL } from './data.js';
-import { App } from './ui.js';
+import { App, loadNotation } from './ui.js';
 
 const saveKey = 'clickingSpreeSave';
 const autosaveInterval = 15000;
 
 const hasSave = () => localStorage.getItem(saveKey) !== null;
-
-function render() {
-	updateReveals(state);
-	app.update(state, { hasSave: hasSave() });
-}
 
 // Wraps each action so the UI re-renders after it changes state.
 const withRender = (actions) => Object.fromEntries(
@@ -44,9 +39,17 @@ function reset() {
 	localStorage.removeItem(saveKey);
 }
 
-const app = App(withRender({ attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, selectLevel, startBoss, save, load, reset }));
+let app;
+function render() {
+	updateReveals(state);
+	app.update(state, { hasSave: hasSave() });
+}
+
+const appActions = withRender({ attack, buyUnit, buyBuilding, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
+app = App({ ...appActions, render });
 document.getElementById('app').append(app.el);
 
+loadNotation();
 load();
 render();
 

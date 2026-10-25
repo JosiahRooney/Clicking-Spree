@@ -54,6 +54,8 @@ body {
 .killz {
 	margin: 20px 0;
 	position: absolute;
+	/* Stays in the column beside the level panel instead of painting over it. */
+	width: 365px;
 }
 
 .tab-bar {
@@ -64,7 +66,8 @@ body {
 	background-color: #333;
 }
 
-.barracksh3,
+.unitsh3,
+.buildingsh3,
 .upgradesh3,
 .skillsh3,
 .maph3 {
@@ -78,10 +81,16 @@ body {
     margin: 0;
     background-color: white;
 }
-.barracksh3 {
+.unitsh3 {
 	background-color: #B69672;
 	color: white;
 	text-shadow: 1px 1px 2px #664622;
+	font-weight: 100;
+}
+.buildingsh3 {
+	background-color: #8A7B6A;
+	color: white;
+	text-shadow: 1px 1px 2px #3A2B1A;
 	font-weight: 100;
 }
 .upgradesh3 {
@@ -122,54 +131,76 @@ body {
 	white-space: nowrap;
 }
 
-.barracks {
+.units {
 	background-color: #B69672;
 	padding-top: 15px;
 }
-.barracks table tr td:nth-child(2) {
+.units.buildings {
+	background-color: #8A7B6A;
+}
+.units table tr td:nth-child(2) {
 	width: 140px;
+}
+
+.building-next {
+	height: 6px;
+	margin-top: 6px;
+	border-radius: 3px;
+	background-color: rgba(0, 0, 0, 0.25);
+	overflow: hidden;
+}
+
+.building-next-fill {
+	height: 100%;
+	width: 0;
+	background-color: #F5D76E;
+	transition: width 1s linear;
+}
+
+.building-next-fill.building-next-snap {
+	transition: none;
 }
 .upgrades {
 	background-color: #85B342;
 	padding-top: 15px;
 }
 
-.barracks ul li,
+.units ul li,
 .upgrades ul li {
 	list-style: none;
 }
 
-.barracks button,
+.units button,
 .upgrades button {
 	padding:8px;
 }
 
-.barracks p,
+.units p,
 .upgrades p {
 	float:right;
 	margin:7px 0;
 }
 
 .killz .stat-value,
-.barracks p span,
+.units p span,
 .upgrades p span {
 	font-size: 1.5em;
 	font-family: 'Share', cursive;
 }
-.barracks table span,
+.units table span,
 .upgrades table span {
 	font-weight: bold;
 }
-.barracks ul {
+.units ul {
 	margin-left: 0;
 }
-.barracks li,
+.units li,
 .upgrades li {
 	clear: both;
 	border-top: 1px solid #444;
 	padding: 15px 0px;
 }
-.barracks li:first-child,
+.units li:first-child,
 .upgrades li:first-child {
 	border-top: none;
 }
@@ -193,7 +224,7 @@ button:disabled {
 	margin-top: 10px;
 }
 
-.barracks li.unit-row {
+.units li.unit-row {
 	display: grid;
 	grid-template-columns: 100px 1fr 210px;
 	gap: 15px;
@@ -213,7 +244,7 @@ button:disabled {
 	max-height: 100%;
 }
 
-.barracks .unit-desc {
+.units .unit-desc {
 	float: none;
 	margin: 6px 0 0;
 	font-size: 0.85em;
@@ -233,8 +264,16 @@ button:disabled {
 /* Level, XP and skill points in the header */
 
 .player-info {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: 0.6em;
+	row-gap: 2px;
 	margin-top: 6px;
 	font-size: 0.9em;
+}
+
+.player-xp {
 	white-space: nowrap;
 }
 
@@ -302,7 +341,7 @@ button:disabled {
 	float: right;
 	clear: right;
 	width: 450px;
-	height: 240px;
+	height: 258px;
 	margin-top: 12px;
 	padding: 14px 16px;
 	overflow: hidden;
@@ -336,6 +375,45 @@ button:disabled {
 
 .level-row .power-compare {
 	margin: 2px 0 0;
+}
+
+.level-reward,
+.level-row-reward {
+	font-size: 0.85em;
+	color: #B3E5FC;
+}
+
+.level-reward {
+	margin-bottom: 8px;
+}
+
+.power-compare + .level-reward {
+	margin-top: -6px;
+}
+
+.repeat-toast {
+	position: absolute;
+	left: 10px;
+	right: 10px;
+	bottom: 8px;
+	padding: 6px 10px;
+	border-radius: 4px;
+	background-color: rgba(10, 40, 60, 0.92);
+	color: #B3E5FC;
+	font-size: 0.85em;
+	text-align: center;
+	pointer-events: none;
+	animation: repeat-toast 3s ease-out forwards;
+}
+
+@keyframes repeat-toast {
+	0% { opacity: 0; transform: translateY(8px); }
+	10%, 75% { opacity: 1; transform: translateY(0); }
+	100% { opacity: 0; transform: translateY(0); }
+}
+
+.supplies-count {
+	color: #0277BD;
 }
 
 .level-progress,
@@ -468,7 +546,8 @@ button:disabled {
 	.level-new {
 		animation: none;
 	}
-	.level-banner {
+	.level-banner,
+	.repeat-toast {
 		animation-name: hit-fade;
 	}
 }
@@ -664,6 +743,30 @@ footer a:hover {
 
 .menu {
 	float: right;
+}
+
+.notation-switch {
+	display: inline-flex;
+	margin-right: 4px;
+	vertical-align: middle;
+}
+
+.notation-button {
+	padding: 1px 6px;
+	font-size: 0.8em;
+	line-height: 1.4;
+	background-color: #F4F4F4;
+	border: 1px solid #8F8F8F;
+}
+
+.notation-button + .notation-button {
+	margin-left: -1px;
+}
+
+.notation-button.notation-active {
+	background-color: #333;
+	color: white;
+	font-weight: bold;
 }
 
 .reset-button {
