@@ -136,6 +136,18 @@ button:disabled {
 	width:455px;
 }
 
+.card-list {
+	padding: 0 15px;
+}
+
+.stats-table {
+	margin-top: 10px;
+}
+
+.unit-image {
+	margin: 10px;
+}
+
 .topcontent {
 	position: fixed;
 	height: 325px;
