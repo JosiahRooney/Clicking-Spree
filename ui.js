@@ -1,5 +1,8 @@
-import { UNITS, UPGRADES, VERSION } from './data.js';
-import { stats, unitCost, unitKps, canBuyUnit, canBuyUpgrade } from './game.js';
+import { UNITS, UPGRADES, SKILLS, SKILL_BRANCHES, VERSION } from './data.js';
+import {
+	stats, unitCost, upgradeCost, crewNeeded, unitKps, displayKps, hvtReward,
+	canBuyUnit, canBuyUpgrade, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
+} from './game.js';
 
 // Components are built once and return { el, update(state, env) }.
 // update() only patches the parts that change, so images and hover state survive re-renders.
@@ -26,6 +29,9 @@ const setText = (el, value) => {
 	}
 };
 
+// Up to 2 decimals, without trailing zeros: 5, 8.25, 1.3
+const formatNumber = (n) => String(Number(n.toFixed(2)));
+
 const statsTable = (...rows) => h('table', { className: 'stats-table' },
 	rows.map(([label, ...cells]) => h('tr', {}, h('td', {}, label), h('td', {}, ...cells))),
 );
@@ -35,8 +41,14 @@ const statsTable = (...rows) => h('table', { className: 'stats-table' },
 // ======== Header ========
 
 function Header(actions) {
-	const kills = h('span');
-	const kps = h('span');
+	const kills = h('span', { className: 'stat-value' });
+	const kps = h('span', { className: 'stat-value' });
+	const level = h('span', { className: 'player-level' });
+	const xpBar = h('progress', { className: 'xp-bar' });
+	const xpText = h('span', { className: 'xp-text' });
+	const points = h('span');
+	const critFlash = h('span', { className: 'crit-flash', hidden: true });
+	const hvtButton = h('button', { className: 'hvt-button', type: 'button', hidden: true, onClick: actions.clickHvt });
 	const loadButton = h('button', { type: 'button', onClick: actions.load }, 'Load');
 	const saveButton = h('button', { type: 'button', onClick: actions.save }, 'Save');
 
@@ -47,10 +59,15 @@ function Header(actions) {
 		h('img', { src: 'images/warlogo.jpg', className: 'warlogo', alt: 'image of war' }),
 		h('p', {}, 'Click the button to attack enemies and earn kills. Spend kills on troops and upgrades.'),
 		h('button', { className: 'clicker', type: 'button', onClick: actions.attack }, 'Attack'),
+		critFlash,
 		h('div', { className: 'killz' },
 			'You have ', kills, ' kills.', h('br'),
 			'You have ', kps, ' kills per second (KPS).',
+			h('div', { className: 'player-info' },
+				'Level ', level, ' ', xpBar, ' ', xpText, ' \u00b7 ', points, ' skill points',
+			),
 		),
+		hvtButton,
 	);
 
 	const scrollPoint = 76;
@@ -65,13 +82,38 @@ function Header(actions) {
 		flashTimer = setTimeout(() => { saveButton.textContent = 'Save'; }, 1500);
 	};
 
+	let seenCrits = 0;
+	let critTimer;
+	const showCrit = (amount) => {
+		critFlash.textContent = `CRIT! +${formatNumber(amount)}`;
+		critFlash.hidden = false;
+		clearTimeout(critTimer);
+		critTimer = setTimeout(() => { critFlash.hidden = true; }, 800);
+	};
+
 	return {
 		el,
 		flashSaved,
 		update(s, env) {
+			const progress = xpProgress(s);
 			setText(kills, s.kills.toFixed(2));
-			setText(kps, s.kps.toFixed(2));
+			setText(kps, displayKps(s).toFixed(2));
+			setText(level, progress.level);
+			xpBar.max = progress.needed;
+			xpBar.value = progress.into;
+			setText(xpText, `${Math.floor(progress.into)} / ${progress.needed} XP`);
+			setText(points, skillPoints(s));
 			loadButton.disabled = !env.hasSave;
+
+			if (s.crits !== seenCrits) {
+				seenCrits = s.crits;
+				showCrit(s.lastCritAmount);
+			}
+
+			hvtButton.hidden = s.hvt.activeFor <= 0;
+			if (!hvtButton.hidden) {
+				setText(hvtButton, `High-Value Target! +${Math.floor(hvtReward(s))} kills (${s.hvt.activeFor}s)`);
+			}
 		},
 	};
 }
@@ -81,10 +123,13 @@ function Header(actions) {
 // ======== Barracks ========
 
 const unitKpsLabel = (def, s) => {
+	const { allKillsMultiplier, kpsMultiplier, betterRecruits } = stats(s);
 	if (def.id === 'recruit') {
-		return stats(s).betterRecruits ? '1 - 3' : '0 - 1';
+		const multiplier = kpsMultiplier(def) * allKillsMultiplier;
+		const [min, max] = betterRecruits ? [1, 3] : [0, 1];
+		return `${formatNumber(min * multiplier)} - ${formatNumber(max * multiplier)}`;
 	}
-	return unitKps(def, s);
+	return formatNumber(unitKps(def, s) * allKillsMultiplier);
 };
 
 function UnitCard(def, actions) {
@@ -92,7 +137,8 @@ function UnitCard(def, actions) {
 	const cost = h('span');
 	const have = h('span');
 	const kps = h('span');
-	const crew = def.needs && [h('br'), ' ', h('span', {}, def.needs.amount), ' ', def.needs.label];
+	const crewAmount = h('span');
+	const crew = def.needs && [h('br'), ' ', crewAmount, ' ', def.needs.label];
 
 	const el = h('li', {},
 		button,
@@ -113,6 +159,9 @@ function UnitCard(def, actions) {
 			setText(cost, unitCost(def, s));
 			setText(have, s.units[def.id]);
 			setText(kps, unitKpsLabel(def, s));
+			if (def.needs) {
+				setText(crewAmount, crewNeeded(def, s));
+			}
 		},
 	};
 }
@@ -142,10 +191,11 @@ function BarracksPanel(actions) {
 
 function UpgradeCard(def, actions) {
 	const button = h('button', { type: 'button', onClick: () => actions.buyUpgrade(def.id) }, def.name);
+	const cost = h('span');
 	const details = h('div', {},
 		button,
 		h('p', { className: 'desc' }, def.description),
-		statsTable(['Cost:', h('span', {}, def.cost), ' kills']),
+		statsTable(['Cost:', cost, ' kills']),
 		h('p', {}, def.bonus.before, h('span', {}, def.bonus.value), def.bonus.after),
 	);
 	const purchased = h('span', {}, def.purchasedMessage);
@@ -159,6 +209,7 @@ function UpgradeCard(def, actions) {
 			details.hidden = bought;
 			purchased.hidden = !bought;
 			button.disabled = !canBuyUpgrade(def, s);
+			setText(cost, upgradeCost(def, s));
 		},
 	};
 }
@@ -184,12 +235,101 @@ function UpgradesPanel(actions) {
 
 
 
+// ======== Skills ========
+
+const skillName = (id) => SKILLS.find((def) => def.id === id).name;
+
+function SkillCard(def, actions) {
+	const button = h('button', { type: 'button', onClick: () => actions.buySkill(def.id) }, def.name);
+	const rank = h('span', { className: 'skill-rank' });
+	const el = h('div', { className: 'skill-card' },
+		button, ' ', rank,
+		h('p', { className: 'skill-desc' }, def.description),
+		def.requires && h('p', { className: 'skill-requires' }, `Requires ${skillName(def.requires)}`),
+	);
+
+	return {
+		el,
+		update(s) {
+			const current = s.skills[def.id];
+			setText(rank, `${current} / ${def.maxRank}`);
+			button.disabled = !canBuySkill(def, s);
+			el.classList.toggle('skill-maxed', current === def.maxRank);
+		},
+	};
+}
+
+function SkillTier(branch, tier, actions) {
+	const cards = SKILLS.filter((def) => def.branch === branch.id && def.tier === tier).map((def) => SkillCard(def, actions));
+	const required = tierRequirement(tier);
+	const label = h('div', { className: 'tier-label' },
+		`Tier ${tier}`,
+		required > 0 && ` (needs ${required} points in ${branch.name})`,
+	);
+	const el = h('div', { className: 'skill-tier' }, label, cards.map((card) => card.el));
+
+	return {
+		el,
+		update(s) {
+			el.classList.toggle('tier-locked', branchPoints(s, branch.id) < required);
+			cards.forEach((card) => card.update(s));
+		},
+	};
+}
+
+function SkillBranch(branch, actions) {
+	const tierNumbers = [...new Set(SKILLS.filter((def) => def.branch === branch.id).map((def) => def.tier))].sort();
+	const tiers = tierNumbers.map((tier) => SkillTier(branch, tier, actions));
+	const spent = h('span');
+	const el = h('div', { className: `skill-branch skill-branch-${branch.id}` },
+		h('h4', {}, branch.name),
+		h('p', { className: 'skill-branch-desc' }, branch.description),
+		h('p', { className: 'skill-branch-spent' }, 'Points spent: ', spent),
+		tiers.map((tier) => tier.el),
+	);
+
+	return {
+		el,
+		update(s) {
+			setText(spent, branchPoints(s, branch.id));
+			tiers.forEach((tier) => tier.update(s));
+		},
+	};
+}
+
+function SkillsPanel(actions) {
+	const branches = SKILL_BRANCHES.map((branch) => SkillBranch(branch, actions));
+	const points = h('span');
+	const resetButton = h('button', { type: 'button', onClick: actions.resetSkills }, 'Reset skills');
+	const el = h('div', { className: 'skills' },
+		h('div', { className: 'skills-header' },
+			h('span', {}, 'Skill points available: ', points),
+			resetButton,
+		),
+		h('p', { className: 'skills-intro' }, 'Every kill earns 1 XP. Each level gives a skill point. Spend points in a branch to open its higher tiers.'),
+		h('div', { className: 'skill-branches' }, branches.map((branch) => branch.el)),
+	);
+
+	return {
+		el,
+		update(s) {
+			el.hidden = s.activeTab !== 'skills';
+			setText(points, skillPoints(s));
+			resetButton.disabled = SKILLS.every((def) => s.skills[def.id] === 0);
+			branches.forEach((branch) => branch.update(s));
+		},
+	};
+}
+
+
+
 // ======== App ========
 
 export function App(actions) {
 	const header = Header(actions);
 	const barracks = BarracksPanel(actions);
 	const upgrades = UpgradesPanel(actions);
+	const skills = SkillsPanel(actions);
 
 	const el = h('div', { className: 'mainwrap' },
 		h('div', { className: 'maincontent' },
@@ -198,8 +338,11 @@ export function App(actions) {
 				h('h3', { className: 'barracksh3', onClick: () => actions.setTab('barracks') }, 'Barracks'),
 				' ',
 				h('h3', { className: 'upgradesh3', onClick: () => actions.setTab('upgrades') }, 'Upgrades'),
+				' ',
+				h('h3', { className: 'skillsh3', onClick: () => actions.setTab('skills') }, 'Skills'),
 				barracks.el,
 				upgrades.el,
+				skills.el,
 			),
 		),
 	);
@@ -211,6 +354,7 @@ export function App(actions) {
 			header.update(s, env);
 			barracks.update(s);
 			upgrades.update(s);
+			skills.update(s);
 		},
 	};
 }

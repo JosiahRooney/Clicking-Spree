@@ -1,5 +1,6 @@
 import {
-	state, attack, buyUnit, buyUpgrade, setTab, tick, closeAirSupportTick, updateReveals, serialize, deserialize,
+	state, attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab,
+	tick, closeAirSupportTick, updateReveals, serialize, deserialize,
 } from './game.js';
 import { App } from './ui.js';
 
@@ -34,7 +35,7 @@ function load() {
 	deserialize(localStorage.getItem(saveKey));
 }
 
-const app = App(withRender({ attack, buyUnit, buyUpgrade, setTab, save, load }));
+const app = App(withRender({ attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, save, load }));
 document.getElementById('app').append(app.el);
 
 load();

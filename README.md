@@ -18,6 +18,12 @@ A little incremental game made in JavaScript.
   - Close Air Support: 50% chance of 100000 bonus kills every 5 seconds
   - Double Tap: each click also earns 3% of your kills per second
 - Units and upgrades are revealed as your kill count grows
+- Experience and levels: every kill earned is 1 XP, and each level gives a skill point
+- A skill tree with three branches, each with 4 tiers that unlock as you spend points in them:
+  - Assault: more kills from clicks and KPS
+  - Intel: critical hits, better recruit rolls, better Close Air Support odds, and High-Value Targets to click for bonus kills
+  - Logistics: cheaper units and upgrades, slower price growth, and smaller crews
+- Free skill reset at any time
 - Save your progress in the browser (localStorage), with an autosave every 15 seconds; it loads automatically next time you open the game
 - Plain JavaScript (ES modules) with no dependencies; the whole page is built from the unit and upgrade data in `data.js`
 
@@ -39,6 +45,7 @@ Then open the localhost URL it prints.
 
 ## Changelog
 
+- v1.2 - experience, levels, and a skill tree (Assault, Intel, Logistics)
 - v1.1.1 - refactor the code to be modular
 - v1.1 - modernize js, remove jquery
 - v1.0 - initial commit

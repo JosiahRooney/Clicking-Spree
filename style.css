@@ -50,7 +50,8 @@ body {
 }
 
 .barracksh3,
-.upgradesh3 {
+.upgradesh3,
+.skillsh3 {
     border-bottom: none;
     padding: 25px;
     text-align: center;
@@ -70,6 +71,13 @@ body {
 	background-color: #85B342;
 	color: white;
 	text-shadow: 1px 1px 2px #154300;
+	font-weight: 100;
+}
+
+.skillsh3 {
+	background-color: #5A7DA8;
+	color: white;
+	text-shadow: 1px 1px 2px #1A3D68;
 	font-weight: 100;
 }
 
@@ -101,7 +109,7 @@ body {
 	margin:7px 0;
 }
 
-.killz span,
+.killz .stat-value,
 .barracks p span,
 .upgrades p span {
 	font-size: 1.5em;
@@ -148,16 +156,140 @@ button:disabled {
 	margin: 10px;
 }
 
+/* Level, XP and skill points in the header */
+
+.player-info {
+	margin-top: 6px;
+	font-size: 0.9em;
+	white-space: nowrap;
+}
+
+.player-level {
+	font-weight: bold;
+}
+
+.xp-bar {
+	width: 120px;
+	height: 12px;
+	vertical-align: middle;
+}
+
+.crit-flash {
+	position: absolute;
+	left: 40px;
+	top: 150px;
+	color: #C00;
+	font-weight: bold;
+	font-size: 1.3em;
+	pointer-events: none;
+}
+
+.hvt-button {
+	position: absolute;
+	right: 30px;
+	bottom: 30px;
+	padding: 12px 18px;
+	font-size: 1.1em;
+	font-weight: bold;
+	color: white;
+	background-color: #C00;
+	border: 2px solid #600;
+	box-shadow: 0 0 12px rgba(200, 0, 0, 0.7);
+}
+
+/* Skills tab */
+
+.skills {
+	background-color: #5A7DA8;
+	color: white;
+	padding: 15px;
+}
+
+.skills-header {
+	margin-bottom: 15px;
+}
+
+.skills-header button {
+	margin-left: 10px;
+	padding: 6px 10px;
+}
+
+.skill-branches {
+	display: flex;
+	gap: 12px;
+}
+
+.skill-branch {
+	flex: 1;
+	background-color: rgba(0, 0, 0, 0.15);
+	padding: 10px;
+}
+
+.skill-branch h4 {
+	margin: 0 0 4px;
+	font-size: 1.3em;
+}
+
+.skill-tier {
+	border-top: 1px solid rgba(255, 255, 255, 0.3);
+	padding-top: 8px;
+	margin-top: 8px;
+}
+
+.tier-label {
+	font-size: 0.85em;
+	text-transform: uppercase;
+	margin-bottom: 6px;
+}
+
+.tier-locked {
+	opacity: 0.45;
+}
+
+.skill-card {
+	background-color: rgba(255, 255, 255, 0.12);
+	padding: 8px;
+	margin-bottom: 8px;
+}
+
+.skill-title {
+	display: flex;
+	justify-content: space-between;
+}
+
+.skill-desc,
+.skill-requires {
+	font-size: 0.85em;
+	margin: 4px 0 6px;
+}
+
+.skill-requires {
+	font-style: italic;
+}
+
+.skill-card button {
+	font-weight: bold;
+}
+
+.skill-card button:disabled {
+	color: #333;
+	opacity: 0.75;
+}
+
+.skill-maxed {
+	outline: 1px solid #FFD54A;
+}
+
 .topcontent {
 	position: fixed;
-	height: 325px;
+	height: 350px;
 	background-color: white;
 	top:0;
 	width: 850px;
 	padding: 15px
 }
 .bottomcontent {
-	padding-top:310px;
+	padding-top:335px;
 }
 
 footer {
