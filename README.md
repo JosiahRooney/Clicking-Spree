@@ -2,6 +2,8 @@
 
 A little incremental game made in JavaScript.
 
+![Clicking Spree gameplay screenshot](images/demo.png)
+
 ## Features
 
 - Click **Attack** to earn kills, then spend them on troops and upgrades
