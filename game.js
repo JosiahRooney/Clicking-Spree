@@ -22,8 +22,8 @@ const freshState = () => ({
 	// Countdowns in seconds. nextIn is null until the next target has been scheduled.
 	hvt: { nextIn: null, activeFor: 0 },
 	// Not saved: lets the UI notice a new critical hit.
-	crits: 0,
-	lastCritAmount: 0,
+	attacks: 0,
+	lastAttack: { amount: 0, crit: false },
 });
 
 // Other modules hold a reference to this object, so it is only ever mutated, never reassigned.
@@ -159,14 +159,10 @@ function earn(amount) {
 
 export function attack() {
 	const { clickBonus, clickMultiplier, clickKpsShare, critChance, critMultiplier } = stats();
-	let amount = clickBonus * clickMultiplier + state.kps * clickKpsShare;
-	if (critChance > 0 && Math.random() < critChance) {
-		amount *= critMultiplier;
-		state.crits += 1;
-		state.lastCritAmount = earn(amount);
-		return;
-	}
-	earn(amount);
+	const amount = clickBonus * clickMultiplier + state.kps * clickKpsShare;
+	const crit = critChance > 0 && Math.random() < critChance;
+	state.attacks += 1;
+	state.lastAttack = { amount: earn(crit ? amount * critMultiplier : amount), crit };
 }
 
 export function buyUnit(id) {
@@ -196,6 +192,10 @@ export function buySkill(id) {
 	if (canBuySkill(def)) {
 		state.skills[id] += 1;
 	}
+}
+
+export function resetGame() {
+	Object.assign(state, freshState());
 }
 
 export function resetSkills() {
@@ -340,6 +340,6 @@ export function deserialize(json, s = state) {
 	fresh.hvt.nextIn = Number.isFinite(save.hvt?.nextIn) ? save.hvt.nextIn : null;
 	updateReveals(fresh);
 
-	Object.assign(s, fresh, { activeTab: s.activeTab, crits: s.crits, lastCritAmount: s.lastCritAmount });
+	Object.assign(s, fresh, { activeTab: s.activeTab, attacks: s.attacks, lastAttack: s.lastAttack });
 	return true;
 }

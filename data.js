@@ -1,4 +1,4 @@
-export const VERSION = '1.3';
+export const VERSION = '1.4';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -12,7 +12,7 @@ export const UNITS = [
 		needs: null,
 		reveal: 0,
 		description: "A fresh boot right out of basic training. Sometimes hits the target. Recruit a lot of these. You'll need them later for more advanced units.",
-		image: { src: 'images/jungle_soldier.gif', className: 'unit-image' },
+		image: 'images/jungle_soldier.gif',
 	},
 	{
 		id: 'marksman',
@@ -23,7 +23,7 @@ export const UNITS = [
 		needs: { unit: 'recruit', amount: 1, label: 'Recruit' },
 		reveal: 74,
 		description: 'A more seasoned warrior with higher skills in weaponry. Can become special forces. Requires one recruit.',
-		image: { src: 'images/delta_desert.gif', className: 'unit-image' },
+		image: 'images/delta_desert.gif',
 	},
 	{
 		id: 'crewWpn',
@@ -34,7 +34,7 @@ export const UNITS = [
 		needs: { unit: 'recruit', amount: 3, label: 'Recruits' },
 		reveal: 450,
 		description: 'A crew served weapon requires multiple recruits in order to man it.',
-		image: { src: 'images/mortar.png', style: { height: 'auto', width: '90px' } },
+		image: 'images/mortar.png',
 	},
 	{
 		id: 'ifv',
@@ -45,7 +45,7 @@ export const UNITS = [
 		needs: { unit: 'recruit', amount: 5, label: 'Recruits' },
 		reveal: 3449,
 		description: 'An armored infantry fighting vehicle. Crews 5 recruits. First vehicle available.',
-		image: { src: 'images/ifv.png', style: { height: 'auto', width: '165px' } },
+		image: 'images/ifv.png',
 	},
 	{
 		id: 'specOps',
@@ -56,7 +56,7 @@ export const UNITS = [
 		needs: { unit: 'marksman', amount: 1, label: 'Marksman' },
 		reveal: 19499,
 		description: 'A deadly force on the battlefield. Expensive to train and outfit, but can stealthily engage many enemies without retaliation. Requires a Marksman',
-		image: { src: 'images/cs_sas.gif', className: 'unit-image' },
+		image: 'images/cs_sas.gif',
 	},
 	{
 		id: 'heavy',
@@ -67,7 +67,7 @@ export const UNITS = [
 		needs: { unit: 'marksman', amount: 3, label: 'Marksmen' },
 		reveal: 719999,
 		description: 'Main battle tank. The heavy muscle of any military. Crews 3 marksmen.',
-		image: { src: 'images/heavy.png', style: { height: 'auto', width: '215px' } },
+		image: 'images/heavy.png',
 	},
 	{
 		id: 'f15',
@@ -78,7 +78,7 @@ export const UNITS = [
 		needs: { unit: 'specOps', amount: 1, label: 'Spec Ops' },
 		reveal: 2900000,
 		description: "The F-15 is an air superiority fighter jet. It's fast, expensive, and deadly. It requires one well trained soldier to pilot it.",
-		image: { src: 'images/F15.png', style: { height: 'auto', width: '345px', marginTop: '10px' } },
+		image: 'images/F15.png',
 	},
 	{
 		id: 'b1b',
@@ -89,7 +89,7 @@ export const UNITS = [
 		needs: { unit: 'specOps', amount: 4, label: 'Spec Ops' },
 		reveal: 29000000,
 		description: 'The B-1 Lancer is a four-engine supersonic variable-sweep wing, jet-powered strategic bomber. This powerful aircraft requires 4 specialists to crew it.',
-		image: { src: 'images/B-1-09.png' },
+		image: 'images/B-1-09.png',
 	},
 ];
 

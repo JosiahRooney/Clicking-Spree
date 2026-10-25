@@ -1,5 +1,5 @@
 import {
-	state, attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab,
+	state, attack, buyUnit, buyUpgrade, buySkill, resetSkills, resetGame, clickHvt, setTab,
 	tick, closeAirSupportTick, updateReveals, serialize, deserialize,
 } from './game.js';
 import { App } from './ui.js';
@@ -35,7 +35,15 @@ function load() {
 	deserialize(localStorage.getItem(saveKey));
 }
 
-const app = App(withRender({ attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, save, load }));
+function reset() {
+	if (!confirm('Reset the game? All kills, units, upgrades, XP and skills will be lost, including your save.')) {
+		return;
+	}
+	resetGame();
+	localStorage.removeItem(saveKey);
+}
+
+const app = App(withRender({ attack, buyUnit, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, save, load, reset }));
 document.getElementById('app').append(app.el);
 
 load();

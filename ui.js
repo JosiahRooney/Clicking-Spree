@@ -47,19 +47,18 @@ function Header(actions) {
 	const xpBar = h('progress', { className: 'xp-bar' });
 	const xpText = h('span', { className: 'xp-text' });
 	const points = h('span');
-	const critFlash = h('span', { className: 'crit-flash', hidden: true });
 	const hvtButton = h('button', { className: 'hvt-button', type: 'button', hidden: true, onClick: actions.clickHvt });
 	const loadButton = h('button', { type: 'button', onClick: actions.load }, 'Load');
 	const saveButton = h('button', { type: 'button', onClick: actions.save }, 'Save');
+	const resetButton = h('button', { type: 'button', className: 'reset-button', onClick: actions.reset }, 'Reset');
 
 	const el = h('div', { className: 'topcontent' },
-		h('div', { className: 'menu' }, loadButton, ' ', saveButton),
+		h('div', { className: 'menu' }, loadButton, ' ', saveButton, ' ', resetButton),
 		h('h1', {}, 'Clicking Spree'),
 		h('span', { className: 'headerspan' }, `v${VERSION}`),
 		h('img', { src: 'images/warlogo.jpg', className: 'warlogo', alt: 'image of war' }),
 		h('p', {}, 'Click the button to attack enemies and earn kills. Spend kills on troops and upgrades.'),
 		h('button', { className: 'clicker', type: 'button', onClick: actions.attack }, 'Attack'),
-		critFlash,
 		h('div', { className: 'killz' },
 			'You have ', kills, ' kills.', h('br'),
 			'You have ', kps, ' kills per second (KPS).',
@@ -82,13 +81,14 @@ function Header(actions) {
 		flashTimer = setTimeout(() => { saveButton.textContent = 'Save'; }, 1500);
 	};
 
-	let seenCrits = 0;
-	let critTimer;
-	const showCrit = (amount) => {
-		critFlash.textContent = `CRIT! +${formatNumber(amount)}`;
-		critFlash.hidden = false;
-		clearTimeout(critTimer);
-		critTimer = setTimeout(() => { critFlash.hidden = true; }, 800);
+	let seenAttacks = 0;
+	const showHit = ({ amount, crit }) => {
+		const text = h('span', {
+			className: crit ? 'hit-float hit-crit' : 'hit-float',
+			style: { left: `${40 + Math.random() * 250}px`, top: `${170 + Math.random() * 30}px` },
+		}, `${crit ? 'CRIT! ' : ''}+${formatNumber(amount)}`);
+		text.addEventListener('animationend', () => text.remove());
+		el.append(text);
 	};
 
 	return {
@@ -105,10 +105,10 @@ function Header(actions) {
 			setText(points, skillPoints(s));
 			loadButton.disabled = !env.hasSave;
 
-			if (s.crits !== seenCrits) {
-				seenCrits = s.crits;
-				showCrit(s.lastCritAmount);
+			if (s.attacks > seenAttacks) {
+				showHit(s.lastAttack);
 			}
+			seenAttacks = s.attacks;
 
 			hvtButton.hidden = s.hvt.activeFor <= 0;
 			if (!hvtButton.hidden) {
@@ -138,17 +138,19 @@ function UnitCard(def, actions) {
 	const have = h('span');
 	const kps = h('span');
 	const crewAmount = h('span');
-	const crew = def.needs && [h('br'), ' ', crewAmount, ' ', def.needs.label];
+	const crew = def.needs && [h('br'), '+ ', crewAmount, ' ', def.needs.label];
 
-	const el = h('li', {},
-		button,
-		h('p', { className: 'desc' }, def.description),
+	const el = h('li', { className: 'unit-row' },
+		h('div', { className: 'unit-thumb' }, h('img', { src: def.image, alt: def.name })),
+		h('div', { className: 'unit-info' },
+			button,
+			h('p', { className: 'unit-desc' }, def.description),
+		),
 		statsTable(
 			['Cost:', cost, ' kills', crew],
 			['Have:', have],
+			['KPS:', kps],
 		),
-		h('p', {}, 'Kills Per Second: ', kps),
-		h('img', { src: def.image.src, className: def.image.className ?? '', style: def.image.style ?? {} }),
 	);
 
 	return {
