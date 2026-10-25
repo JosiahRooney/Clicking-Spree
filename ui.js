@@ -262,16 +262,16 @@ function SkillCard(def, actions) {
 function SkillTier(branch, tier, actions) {
 	const cards = SKILLS.filter((def) => def.branch === branch.id && def.tier === tier).map((def) => SkillCard(def, actions));
 	const required = tierRequirement(tier);
-	const label = h('div', { className: 'tier-label' },
-		`Tier ${tier}`,
-		required > 0 && ` (needs ${required} points in ${branch.name})`,
-	);
+	const requirement = h('span', {}, ` (needs ${required} points in ${branch.name})`);
+	const label = h('div', { className: 'tier-label' }, `Tier ${tier}`, required > 0 && requirement);
 	const el = h('div', { className: 'skill-tier' }, label, cards.map((card) => card.el));
 
 	return {
 		el,
 		update(s) {
-			el.classList.toggle('tier-locked', branchPoints(s, branch.id) < required);
+			const locked = branchPoints(s, branch.id) < required;
+			el.classList.toggle('tier-locked', locked);
+			requirement.hidden = !locked;
 			cards.forEach((card) => card.update(s));
 		},
 	};
@@ -325,21 +325,37 @@ function SkillsPanel(actions) {
 
 // ======== App ========
 
+function Tab(id, name, actions, countAvailable = () => 0) {
+	const badge = h('span', { className: 'tab-badge' });
+	const el = h('h3', { className: `${id}h3`, onClick: () => actions.setTab(id) }, name, badge);
+
+	return {
+		el,
+		update(s) {
+			const count = countAvailable(s);
+			badge.hidden = count === 0;
+			setText(badge, count);
+		},
+	};
+}
+
+const availableUpgrades = (s) => UPGRADES.filter((def) => s.revealed.upgrades[def.id] && canBuyUpgrade(def, s)).length;
 export function App(actions) {
 	const header = Header(actions);
 	const barracks = BarracksPanel(actions);
 	const upgrades = UpgradesPanel(actions);
 	const skills = SkillsPanel(actions);
+	const tabs = [
+		Tab('barracks', 'Barracks', actions),
+		Tab('upgrades', 'Upgrades', actions, availableUpgrades),
+		Tab('skills', 'Skills', actions, skillPoints),
+	];
 
 	const el = h('div', { className: 'mainwrap' },
 		h('div', { className: 'maincontent' },
 			header.el,
 			h('div', { className: 'bottomcontent' },
-				h('h3', { className: 'barracksh3', onClick: () => actions.setTab('barracks') }, 'Barracks'),
-				' ',
-				h('h3', { className: 'upgradesh3', onClick: () => actions.setTab('upgrades') }, 'Upgrades'),
-				' ',
-				h('h3', { className: 'skillsh3', onClick: () => actions.setTab('skills') }, 'Skills'),
+				h('div', { className: 'tab-bar' }, tabs.flatMap((tab, i) => (i === 0 ? [tab.el] : [' ', tab.el]))),
 				barracks.el,
 				upgrades.el,
 				skills.el,
@@ -352,6 +368,7 @@ export function App(actions) {
 		flashSaved: header.flashSaved,
 		update(s, env) {
 			header.update(s, env);
+			tabs.forEach((tab) => tab.update(s));
 			barracks.update(s);
 			upgrades.update(s);
 			skills.update(s);

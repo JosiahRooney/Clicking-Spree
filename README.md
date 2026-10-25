@@ -46,6 +46,7 @@ Then open the localhost URL it prints.
 ## Changelog
 
 - v1.2 - experience, levels, and a skill tree (Assault, Intel, Logistics)
+- v1.3 - sticky, slimmer tabs with badges for buyable upgrades and unspent skill points; unlocked tiers drop their requirement text
 - v1.1.1 - refactor the code to be modular
 - v1.1 - modernize js, remove jquery
 - v1.0 - initial commit

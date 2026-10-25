@@ -49,16 +49,25 @@ body {
 	position: absolute;
 }
 
+.tab-bar {
+	position: sticky;
+	top: 350px;
+	z-index: 1;
+	padding-top: 15px;
+	background-color: #333;
+}
+
 .barracksh3,
 .upgradesh3,
 .skillsh3 {
     border-bottom: none;
-    padding: 25px;
+    padding: 8px 15px;
     text-align: center;
     width: 140px;
+    white-space: nowrap;
     cursor: pointer;
     display: inline-block;
-    margin-bottom: auto;
+    margin: 0;
     background-color: white;
 }
 .barracksh3 {
@@ -79,6 +88,27 @@ body {
 	color: white;
 	text-shadow: 1px 1px 2px #1A3D68;
 	font-weight: 100;
+}
+
+.tab-badge {
+	display: inline-block;
+	min-width: 1.4em;
+	margin-left: 8px;
+	padding: 1px 5px;
+	border-radius: 10px;
+	background-color: #C0392B;
+	color: white;
+	font-size: 0.7em;
+	font-weight: bold;
+	line-height: 1.4em;
+	text-shadow: none;
+	vertical-align: middle;
+	box-sizing: border-box;
+	white-space: nowrap;
+}
+
+.tab-badge[hidden] {
+	display: none;
 }
 
 .barracks {
@@ -282,6 +312,7 @@ button:disabled {
 
 .topcontent {
 	position: fixed;
+	z-index: 2;
 	height: 350px;
 	background-color: white;
 	top:0;
@@ -289,7 +320,7 @@ button:disabled {
 	padding: 15px
 }
 .bottomcontent {
-	padding-top:335px;
+	padding-top:350px;
 }
 
 footer {
