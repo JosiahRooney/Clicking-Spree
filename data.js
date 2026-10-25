@@ -1,4 +1,4 @@
-export const VERSION = '1.4';
+export const VERSION = '1.5';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -301,3 +301,53 @@ export const SKILLS = [
 		effect: { type: 'groupDiscount', group: 'aircraft', amount: 0.20 },
 	},
 ];
+
+
+
+// ======== World map ========
+
+// Array order is the unlock chain: each level needs the one before it cleared; the first level is always open.
+// killsRequired counts kills earned while the level is active. boss.seconds is the fight's time limit.
+export const ZONES = [
+	{
+		id: 'desert', name: 'Operation Desert Anvil', faction: 'Insurgent Militia',
+		levels: [
+			{ id: 'desert1', name: 'Checkpoint Raid', killsRequired: 100, boss: { name: 'Militia Captain', hp: 25, seconds: 30 } },
+			{ id: 'desert2', name: 'Supply Route', killsRequired: 500, boss: { name: 'Convoy Commander', hp: 125, seconds: 30 } },
+			{ id: 'desert3', name: 'Oasis Compound', killsRequired: 2000, boss: { name: 'Arms Dealer', hp: 500, seconds: 30 } },
+			{ id: 'desert4', name: 'Mountain Caves', killsRequired: 5000, boss: { name: 'Militia Warlord', hp: 1250, seconds: 30 } },
+		],
+	},
+	{
+		id: 'jungle', name: 'Operation Jungle Viper', faction: 'Guerrilla Cartel',
+		levels: [
+			{ id: 'jungle1', name: 'River Crossing', killsRequired: 20000, boss: { name: 'Sniper Nest', hp: 5000, seconds: 35 } },
+			{ id: 'jungle2', name: 'Hidden Airstrip', killsRequired: 60000, boss: { name: 'Smuggler Pilot', hp: 15000, seconds: 35 } },
+			{ id: 'jungle3', name: 'Cartel Plantation', killsRequired: 150000, boss: { name: 'Enforcer', hp: 37500, seconds: 35 } },
+			{ id: 'jungle4', name: 'Temple Fortress', killsRequired: 400000, boss: { name: 'Cartel Kingpin', hp: 100000, seconds: 35 } },
+		],
+	},
+	{
+		id: 'tundra', name: 'Operation Iron Frost', faction: 'Northern Mechanized Army',
+		levels: [
+			{ id: 'tundra1', name: 'Frozen Outpost', killsRequired: 1000000, boss: { name: 'Recon Battalion', hp: 250000, seconds: 40 } },
+			{ id: 'tundra2', name: 'Rail Yard', killsRequired: 3000000, boss: { name: 'Armored Train', hp: 750000, seconds: 40 } },
+			{ id: 'tundra3', name: 'Missile Silo', killsRequired: 8000000, boss: { name: 'Silo Commander', hp: 2000000, seconds: 40 } },
+			{ id: 'tundra4', name: 'Iron Citadel', killsRequired: 20000000, boss: { name: 'Tank General', hp: 5000000, seconds: 40 } },
+		],
+	},
+	{
+		id: 'blackSky', name: 'Operation Black Sky', faction: 'Rogue Superpower Command',
+		levels: [
+			{ id: 'blackSky1', name: 'Coastal Radar', killsRequired: 50000000, boss: { name: 'Air Defense Grid', hp: 12500000, seconds: 45 } },
+			{ id: 'blackSky2', name: 'Carrier Group', killsRequired: 150000000, boss: { name: 'Fleet Admiral', hp: 37500000, seconds: 45 } },
+			{ id: 'blackSky3', name: 'Command Bunker', killsRequired: 400000000, boss: { name: 'Strategic Command', hp: 100000000, seconds: 45 } },
+			{ id: 'blackSky4', name: 'Capital Strike', killsRequired: 1000000000, boss: { name: 'Supreme Commander', hp: 250000000, seconds: 45 } },
+		],
+	},
+];
+
+// Flat, ordered list of every level, with its zone and position for labels like "Zone 1 - Level 2".
+export const LEVELS = ZONES.flatMap((zone, z) => zone.levels.map((level, l) => ({
+	...level, zone: zone.id, zoneNumber: z + 1, levelNumber: l + 1,
+})));

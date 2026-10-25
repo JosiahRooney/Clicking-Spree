@@ -29,13 +29,6 @@ body {
 	font-family: Helvetica, sans-serif;
 }
 
-.maincontent h1 {
-    font-size: 3.5em;
-    margin: 10px 0;
-    width: 453px;
-    font-family: 'Special Elite', sans-serif;
-}
-
 .clicker {
     font-size: 2.2em;
     height: 84px;
@@ -59,7 +52,8 @@ body {
 
 .barracksh3,
 .upgradesh3,
-.skillsh3 {
+.skillsh3,
+.maph3 {
     border-bottom: none;
     padding: 8px 15px;
     text-align: center;
@@ -87,6 +81,13 @@ body {
 	background-color: #5A7DA8;
 	color: white;
 	text-shadow: 1px 1px 2px #1A3D68;
+	font-weight: 100;
+}
+
+.maph3 {
+	background-color: #6B7F4F;
+	color: white;
+	text-shadow: 1px 1px 2px #2B3F0F;
 	font-weight: 100;
 }
 
@@ -288,6 +289,217 @@ button:disabled {
 	box-shadow: 0 0 12px rgba(200, 0, 0, 0.7);
 }
 
+/* Level panel in the header */
+
+.level-panel {
+	position: relative;
+	float: right;
+	clear: right;
+	width: 450px;
+	height: 215px;
+	margin-top: 12px;
+	padding: 14px 16px;
+	overflow: hidden;
+	background-color: #2E3A24;
+	color: white;
+	border: 3px solid #6B7F4F;
+}
+
+.level-zone {
+	font-size: 0.8em;
+	letter-spacing: 1px;
+	text-transform: uppercase;
+	color: #C9D6A8;
+}
+
+.level-title {
+	margin: 4px 0 12px;
+	font-family: 'Special Elite', sans-serif;
+	font-size: 1.5em;
+}
+
+.level-progress,
+.boss-hp {
+	width: 100%;
+	height: 18px;
+}
+
+.level-count,
+.level-status {
+	margin-top: 6px;
+	font-size: 0.9em;
+}
+
+.level-status {
+	font-weight: bold;
+	color: #FFD54A;
+}
+
+.fight-button {
+	margin-top: 10px;
+	padding: 8px 14px;
+	font-weight: bold;
+	color: white;
+	background-color: #C00;
+	border: 2px solid #600;
+	cursor: pointer;
+}
+
+.boss-name {
+	margin-bottom: 8px;
+	font-weight: bold;
+	font-size: 1.1em;
+	color: #FF8A80;
+}
+
+.boss-hp {
+	accent-color: #C00;
+	height: 24px;
+}
+
+.boss-stats {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 6px;
+}
+
+.boss-time {
+	font-weight: bold;
+	font-size: 1.3em;
+}
+
+.boss-time-low {
+	color: #FF5252;
+}
+
+.level-new {
+	animation: level-flash 1.2s ease-out;
+}
+
+@keyframes level-flash {
+	0%, 30% { background-color: #6B7F4F; }
+	100% { background-color: #2E3A24; }
+}
+
+.level-banner {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	padding: 16px;
+	text-align: center;
+	font-family: 'Special Elite', sans-serif;
+	font-size: 1.3em;
+	color: white;
+	background-color: rgba(20, 28, 14, 0.94);
+	pointer-events: none;
+	animation: level-banner 3.5s ease-out forwards;
+}
+
+.level-banner-top {
+	margin-bottom: 8px;
+	font-size: 1.3em;
+	color: #FFD54A;
+	text-transform: uppercase;
+}
+
+@keyframes level-banner {
+	0% { opacity: 0; transform: translateY(-20px); }
+	10%, 80% { opacity: 1; transform: translateY(0); }
+	100% { opacity: 0; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.level-new {
+		animation: none;
+	}
+	.level-banner {
+		animation-name: hit-fade;
+	}
+}
+
+.lifetime-kills {
+	margin-top: 4px;
+	font-size: 0.85em;
+	color: #666;
+}
+
+/* Map tab */
+
+.map {
+	background-color: #6B7F4F;
+	color: white;
+	padding: 15px;
+}
+
+.map-intro {
+	margin-top: 0;
+}
+
+.zone-section {
+	background-color: rgba(0, 0, 0, 0.15);
+	padding: 10px;
+	margin-bottom: 12px;
+}
+
+.zone-section h4 {
+	margin: 0;
+	font-size: 1.3em;
+}
+
+.zone-faction {
+	margin: 4px 0 8px;
+	font-size: 0.85em;
+}
+
+.level-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.level-row {
+	display: grid;
+	grid-template-columns: 1fr 230px 190px;
+	gap: 12px;
+	align-items: center;
+	padding: 8px;
+	margin-bottom: 6px;
+	background-color: rgba(255, 255, 255, 0.12);
+}
+
+.level-row-status {
+	font-size: 0.85em;
+}
+
+.level-row-count {
+	display: block;
+	font-size: 0.8em;
+}
+
+.level-row-actions {
+	text-align: right;
+}
+
+.level-row-actions button {
+	margin-left: 6px;
+	padding: 6px 10px;
+	font-weight: bold;
+}
+
+.level-row .fight-button {
+	margin-top: 0;
+}
+
+.level-active {
+	outline: 2px solid #FFD54A;
+}
+
+.level-locked {
+	opacity: 0.45;
+}
+
 /* Skills tab */
 
 .skills {
@@ -391,13 +603,6 @@ footer {
 	margin-top: 150px;
 }
 
-.warlogo {
-    float: right;
-    height: auto;
-    margin-top: 51px;
-    width: 450px;
-}
-
 a {
 	color: inherit;
 	text-decoration: none;
@@ -415,9 +620,8 @@ footer a:hover {
 	color: #B03A2E;
 }
 
-.headerspan {
-	font-size: 0.7em;
-    left: 470px;
-    position: absolute;
-    top: 54px;
+.brand {
+	margin-right: 10px;
+	font-family: 'Special Elite', sans-serif;
+	font-size: 1.1em;
 }

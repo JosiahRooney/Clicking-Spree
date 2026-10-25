@@ -1,7 +1,8 @@
-import { UNITS, UPGRADES, SKILLS, SKILL_BRANCHES, VERSION } from './data.js';
+import { UNITS, UPGRADES, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION } from './data.js';
 import {
 	stats, unitCost, upgradeCost, crewNeeded, unitKps, displayKps, hvtReward,
 	canBuyUnit, canBuyUpgrade, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
+	levelDef, levelAvailable, levelBeat, canFightBoss,
 } from './game.js';
 
 // Components are built once and return { el, update(state, env) }.
@@ -32,6 +33,11 @@ const setText = (el, value) => {
 // Up to 2 decimals, without trailing zeros: 5, 8.25, 1.3
 const formatNumber = (n) => String(Number(n.toFixed(2)));
 
+// Whole numbers with thousands separators: 1,250,000
+const formatCount = (n) => Math.floor(n).toLocaleString('en-US');
+
+const levelLabel = (def) => `Zone ${def.zoneNumber} - Level ${def.levelNumber}: ${def.name}`;
+
 const statsTable = (...rows) => h('table', { className: 'stats-table' },
 	rows.map(([label, ...cells]) => h('tr', {}, h('td', {}, label), h('td', {}, ...cells))),
 );
@@ -40,6 +46,94 @@ const statsTable = (...rows) => h('table', { className: 'stats-table' },
 
 // ======== Header ========
 
+const zoneDef = Object.fromEntries(ZONES.map((zone) => [zone.id, zone]));
+
+const levelStatus = (def, s) => {
+	if (s.map.cleared[def.id]) {
+		return def === LEVELS[LEVELS.length - 1] ? 'Campaign complete' : 'Boss defeated';
+	}
+	if (s.boss?.levelId === def.id) {
+		return 'Fighting the boss';
+	}
+	if (levelBeat(def.id, s)) {
+		return 'Boss ready';
+	}
+	return `${formatCount(def.killsRequired - s.map.progress[def.id])} kills to the boss`;
+};
+
+function LevelPanel(actions) {
+	let levelId = LEVELS[0].id;
+	const zone = h('div', { className: 'level-zone' });
+	const title = h('div', { className: 'level-title' });
+	const bar = h('progress', { className: 'level-progress' });
+	const count = h('div', { className: 'level-count' });
+	const status = h('div', { className: 'level-status' });
+	const fightButton = h('button', { type: 'button', className: 'fight-button', onClick: () => actions.startBoss(levelId) });
+	const progressBlock = h('div', {}, bar, count, status, fightButton);
+
+	const bossName = h('span');
+	const bossBar = h('progress', { className: 'boss-hp' });
+	const bossHp = h('span');
+	const bossTime = h('span', { className: 'boss-time' });
+	const bossBlock = h('div', { className: 'boss-block' },
+		h('div', { className: 'boss-name' }, 'BOSS: ', bossName),
+		bossBar,
+		h('div', { className: 'boss-stats' }, bossHp, bossTime),
+	);
+
+	const el = h('div', { className: 'level-panel' }, zone, title, progressBlock, bossBlock);
+
+	const announce = ({ levelId: id, defeatedBoss }) => {
+		const def = levelDef[id];
+		const banner = h('div', { className: 'level-banner' },
+			h('div', { className: 'level-banner-top' }, defeatedBoss ? `${defeatedBoss} defeated!` : 'Deployed'),
+			h('div', {}, `${defeatedBoss ? 'NEW LEVEL: ' : ''}${levelLabel(def)}`),
+		);
+		banner.addEventListener('animationend', () => banner.remove());
+		el.append(banner);
+		el.classList.remove('level-new');
+		void el.offsetWidth;
+		el.classList.add('level-new');
+	};
+
+	let seenLevelStarts = 0;
+
+	return {
+		el,
+		update(s) {
+			const def = levelDef[s.map.activeLevel];
+			levelId = def.id;
+			setText(zone, `${zoneDef[def.zone].name} \u00b7 ${zoneDef[def.zone].faction}`);
+			setText(title, levelLabel(def));
+
+			const cleared = s.map.cleared[def.id];
+			bar.max = def.killsRequired;
+			bar.value = cleared ? def.killsRequired : Math.min(s.map.progress[def.id], def.killsRequired);
+			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)} lifetime kills earned here`);
+			setText(status, levelStatus(def, s));
+			fightButton.hidden = !canFightBoss(def.id, s);
+			setText(fightButton, `Fight Boss: ${def.boss.name}`);
+
+			progressBlock.hidden = s.boss !== null;
+			bossBlock.hidden = s.boss === null;
+			if (s.boss) {
+				const boss = levelDef[s.boss.levelId].boss;
+				setText(bossName, boss.name);
+				bossBar.max = s.boss.maxHp;
+				bossBar.value = Math.max(0, s.boss.hp);
+				setText(bossHp, `${formatCount(Math.max(0, s.boss.hp))} / ${formatCount(s.boss.maxHp)} HP`);
+				setText(bossTime, `${s.boss.timeLeft}s left`);
+				bossTime.classList.toggle('boss-time-low', s.boss.timeLeft <= 5);
+			}
+
+			if (s.levelStarts > seenLevelStarts) {
+				announce(s.lastLevelStart);
+			}
+			seenLevelStarts = s.levelStarts;
+		},
+	};
+}
+
 function Header(actions) {
 	const kills = h('span', { className: 'stat-value' });
 	const kps = h('span', { className: 'stat-value' });
@@ -47,21 +141,25 @@ function Header(actions) {
 	const xpBar = h('progress', { className: 'xp-bar' });
 	const xpText = h('span', { className: 'xp-text' });
 	const points = h('span');
+	const lifetime = h('span');
+	const levelPanel = LevelPanel(actions);
 	const hvtButton = h('button', { className: 'hvt-button', type: 'button', hidden: true, onClick: actions.clickHvt });
 	const loadButton = h('button', { type: 'button', onClick: actions.load }, 'Load');
 	const saveButton = h('button', { type: 'button', onClick: actions.save }, 'Save');
 	const resetButton = h('button', { type: 'button', className: 'reset-button', onClick: actions.reset }, 'Reset');
 
 	const el = h('div', { className: 'topcontent' },
-		h('div', { className: 'menu' }, loadButton, ' ', saveButton, ' ', resetButton),
-		h('h1', {}, 'Clicking Spree'),
-		h('span', { className: 'headerspan' }, `v${VERSION}`),
-		h('img', { src: 'images/warlogo.jpg', className: 'warlogo', alt: 'image of war' }),
+		h('div', { className: 'menu' },
+			h('span', { className: 'brand' }, `Clicking Spree v${VERSION}`), ' ',
+			loadButton, ' ', saveButton, ' ', resetButton,
+		),
+		levelPanel.el,
 		h('p', {}, 'Click the button to attack enemies and earn kills. Spend kills on troops and upgrades.'),
 		h('button', { className: 'clicker', type: 'button', onClick: actions.attack }, 'Attack'),
 		h('div', { className: 'killz' },
 			'You have ', kills, ' kills.', h('br'),
 			'You have ', kps, ' kills per second (KPS).',
+			h('div', { className: 'lifetime-kills' }, 'Lifetime kills: ', lifetime),
 			h('div', { className: 'player-info' },
 				'Level ', level, ' ', xpBar, ' ', xpText, ' \u00b7 ', points, ' skill points',
 			),
@@ -85,7 +183,7 @@ function Header(actions) {
 	const showHit = ({ amount, crit }) => {
 		const text = h('span', {
 			className: crit ? 'hit-float hit-crit' : 'hit-float',
-			style: { left: `${40 + Math.random() * 250}px`, top: `${170 + Math.random() * 30}px` },
+			style: { left: `${40 + Math.random() * 250}px`, top: `${100 + Math.random() * 30}px` },
 		}, `${crit ? 'CRIT! ' : ''}+${formatNumber(amount)}`);
 		text.addEventListener('animationend', () => text.remove());
 		el.append(text);
@@ -103,7 +201,9 @@ function Header(actions) {
 			xpBar.value = progress.into;
 			setText(xpText, `${Math.floor(progress.into)} / ${progress.needed} XP`);
 			setText(points, skillPoints(s));
+			setText(lifetime, formatCount(s.lifetimeKills));
 			loadButton.disabled = !env.hasSave;
+			levelPanel.update(s);
 
 			if (s.attacks > seenAttacks) {
 				showHit(s.lastAttack);
@@ -325,6 +425,74 @@ function SkillsPanel(actions) {
 
 
 
+// ======== Map ========
+
+function LevelRow(def, actions) {
+	const deployButton = h('button', { type: 'button', onClick: () => actions.selectLevel(def.id) }, 'Deploy');
+	const fightButton = h('button', { type: 'button', className: 'fight-button', onClick: () => actions.startBoss(def.id) }, 'Fight Boss');
+	const status = h('span', { className: 'level-row-status' });
+	const bar = h('progress', { className: 'level-progress' });
+	const count = h('span', { className: 'level-row-count' });
+	const el = h('li', { className: 'level-row' },
+		h('div', { className: 'level-row-name' },
+			h('strong', {}, `Level ${def.levelNumber}: ${def.name}`), h('br'),
+			status,
+		),
+		h('div', { className: 'level-row-progress' }, bar, count),
+		h('div', { className: 'level-row-actions' }, deployButton, fightButton),
+	);
+
+	return {
+		el,
+		update(s) {
+			const available = levelAvailable(def.id, s);
+			const active = s.map.activeLevel === def.id;
+			el.classList.toggle('level-locked', !available);
+			el.classList.toggle('level-active', active);
+			setText(status, !available ? 'Locked' : `${active ? 'Active \u00b7 ' : ''}${levelStatus(def, s)}`);
+			bar.max = def.killsRequired;
+			bar.value = s.map.cleared[def.id] ? def.killsRequired : Math.min(s.map.progress[def.id], def.killsRequired);
+			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)}`);
+			deployButton.hidden = !available || active || s.boss !== null;
+			fightButton.hidden = !canFightBoss(def.id, s);
+		},
+	};
+}
+
+function ZoneSection(zone, actions) {
+	const rows = LEVELS.filter((def) => def.zone === zone.id).map((def) => LevelRow(def, actions));
+	const el = h('div', { className: 'zone-section' },
+		h('h4', {}, `Zone ${ZONES.indexOf(zone) + 1}: ${zone.name}`),
+		h('p', { className: 'zone-faction' }, `Enemy: ${zone.faction}`),
+		h('ul', { className: 'level-list' }, rows.map((row) => row.el)),
+	);
+
+	return {
+		el,
+		update(s) {
+			rows.forEach((row) => row.update(s));
+		},
+	};
+}
+
+function MapPanel(actions) {
+	const zones = ZONES.map((zone) => ZoneSection(zone, actions));
+	const el = h('div', { className: 'map' },
+		h('p', { className: 'map-intro' }, 'Kills earned while a level is active count toward it, on any tab. Spending never lowers progress. Reach the goal, then fight the boss to unlock the next level.'),
+		zones.map((zone) => zone.el),
+	);
+
+	return {
+		el,
+		update(s) {
+			el.hidden = s.activeTab !== 'map';
+			zones.forEach((zone) => zone.update(s));
+		},
+	};
+}
+
+
+
 // ======== App ========
 
 function Tab(id, name, actions, countAvailable = () => 0) {
@@ -342,15 +510,18 @@ function Tab(id, name, actions, countAvailable = () => 0) {
 }
 
 const availableUpgrades = (s) => UPGRADES.filter((def) => s.revealed.upgrades[def.id] && canBuyUpgrade(def, s)).length;
+const bossesReady = (s) => LEVELS.filter((def) => canFightBoss(def.id, s)).length;
 export function App(actions) {
 	const header = Header(actions);
 	const barracks = BarracksPanel(actions);
 	const upgrades = UpgradesPanel(actions);
 	const skills = SkillsPanel(actions);
+	const map = MapPanel(actions);
 	const tabs = [
 		Tab('barracks', 'Barracks', actions),
 		Tab('upgrades', 'Upgrades', actions, availableUpgrades),
 		Tab('skills', 'Skills', actions, skillPoints),
+		Tab('map', 'Map', actions, bossesReady),
 	];
 
 	const el = h('div', { className: 'mainwrap' },
@@ -361,6 +532,7 @@ export function App(actions) {
 				barracks.el,
 				upgrades.el,
 				skills.el,
+				map.el,
 			),
 		),
 	);
@@ -374,6 +546,7 @@ export function App(actions) {
 			barracks.update(s);
 			upgrades.update(s);
 			skills.update(s);
+			map.update(s);
 		},
 	};
 }
