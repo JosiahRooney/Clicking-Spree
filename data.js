@@ -1,4 +1,4 @@
-export const VERSION = '1.9';
+export const VERSION = '1.11';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -411,3 +411,136 @@ export const LEVELS = ZONES
 		...level,
 		supplies: roundTo2(level.killsRequired * SUPPLY_RATE * SUPPLY_LEVEL_GROWTH ** index),
 	}));
+
+
+
+// ======== Perks and prestige ========
+
+// Lifetime kills for each unpaid threshold. The first is 1,000,000, and each one after that is 5× higher.
+export const PRESTIGE_BASE_KILLS = 1_000_000;
+export const PRESTIGE_KILL_GROWTH = 5;
+
+export const prestigeKillsRequired = (index) => PRESTIGE_BASE_KILLS * PRESTIGE_KILL_GROWTH ** index;
+
+// Points that threshold pays: 1, then 2, then 4, ...
+export const thresholdPoints = (index) => 2 ** index;
+
+// How many thresholds `kills` has reached, not counting the `from` already claimed.
+export const thresholdsReached = (kills, from = 0) => {
+	let index = from;
+	while (index < 40 && kills >= prestigeKillsRequired(index)) index += 1;
+	return index;
+};
+
+// Sum of the points for every threshold from `from` up to, but not including, the first one still ahead.
+export const prestigePoints = (kills, from = 0) => {
+	const reached = thresholdsReached(kills, from);
+	return reached <= from ? 0 : thresholdPoints(reached) - thresholdPoints(from);
+};
+
+// Every unowned perk costs the same. With `owned` already bought, the next one costs 2^owned: 1, then 2, then 4, ...
+export const perkCost = (owned) => 2 ** owned;
+
+// One purchase each, in any order. effect.amount is applied while the perk is owned.
+export const PERKS = [
+	{
+		id: 'extraDrill', name: 'Extra Drill',
+		description: 'Recruits roll one extra time each second and keep the best roll.',
+		effect: { type: 'recruitRolls', amount: 1 },
+	},
+	{
+		id: 'speedReload', name: 'Speed Reload',
+		description: 'Reload time is 25% shorter.',
+		effect: { type: 'reloadMultiplier', amount: 0.75 },
+	},
+	{
+		id: 'zeroing', name: 'Zeroing',
+		description: 'Click damage is 50% higher.',
+		effect: { type: 'clickMultiplier', amount: 1.5 },
+	},
+	{
+		id: 'cadre', name: 'Cadre',
+		description: 'Each prestige starts you with 15 Recruits. Buying this does not spawn them; the next prestige does. They are not purchases, so the price does not rise.',
+		effect: { type: 'startingRecruits', amount: 15 },
+	},
+	{
+		id: 'immediateAction', name: 'Immediate Action',
+		description: 'A 50% chance that emptying the magazine refills it with no reload.',
+		effect: { type: 'skipReload', amount: 0.5 },
+	},
+	{
+		id: 'warCollege', name: 'War College',
+		description: 'Double XP. Kills, lifetime kills, and map progress are unchanged.',
+		effect: { type: 'xpMultiplier', amount: 2 },
+	},
+	{
+		id: 'priorityShipping', name: 'Priority Shipping',
+		description: 'Double supplies from trucks, first clears, and repeat clears.',
+		effect: { type: 'supplyMultiplier', amount: 2 },
+	},
+	{
+		id: 'fiveFinger', name: 'Five-Finger Discount',
+		description: 'Every 5th purchase of each building is free.',
+		effect: { type: 'freeFifth', amount: 5 },
+	},
+	{
+		id: 'massConscription', name: 'Mass Conscription',
+		description: 'Buying a unit enlists two for the price and crew of one.',
+		effect: { type: 'doubleEnlist', amount: 2 },
+	},
+	{
+		id: 'doubleShift', name: 'Double Shift',
+		description: 'Buildings produce units twice as fast.',
+		effect: { type: 'buildingSpeed', amount: 2 },
+	},
+	{
+		id: 'sentry', name: 'Sentry',
+		description: 'Attack fires on its own. You can still click.',
+		effect: { type: 'autoAttack', amount: 1 },
+	},
+	{
+		id: 'bulkBuy', name: 'Bulk Buy',
+		description: 'Unit prices are half.',
+		effect: { type: 'unitCostMultiplier', amount: 0.5 },
+	},
+	{
+		id: 'drumMag', name: 'Drum Mag',
+		description: 'Magazine size is doubled.',
+		effect: { type: 'magazineMultiplier', amount: 2 },
+	},
+	{
+		id: 'fullAuto', name: 'Full Auto',
+		description: 'Attack cooldown is half.',
+		effect: { type: 'cooldownMultiplier', amount: 0.5 },
+	},
+	{
+		id: 'glassJaw', name: 'Glass Jaw',
+		description: 'Bosses have 1/4 of their health.',
+		effect: { type: 'bossHpMultiplier', amount: 0.25 },
+	},
+	{
+		id: 'combinedArms', name: 'Combined Arms',
+		description: 'Troop kills per second are doubled.',
+		effect: { type: 'kpsMultiplier', amount: 2 },
+	},
+	{
+		id: 'longSiege', name: 'Long Siege',
+		description: 'Boss fights last twice as long.',
+		effect: { type: 'bossTimeMultiplier', amount: 2 },
+	},
+	{
+		id: 'skeletonCrews', name: 'Skeleton Crews',
+		description: 'Units that use crew need 1 fewer (minimum 1).',
+		effect: { type: 'crewReduction', amount: 1 },
+	},
+	{
+		id: 'priceFreeze', name: 'Price Freeze',
+		description: 'Unit price growth per purchase drops from 1.10 to 1.05.',
+		effect: { type: 'costGrowthReduction', amount: 0.05 },
+	},
+	{
+		id: 'totalWar', name: 'Total War',
+		description: '+100% kills from every source.',
+		effect: { type: 'allKillsBonus', amount: 1 },
+	},
+];

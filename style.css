@@ -82,7 +82,7 @@ body {
 }
 
 .killz {
-	margin: 20px 0;
+	margin: 12px 0 0;
 	position: absolute;
 	/* Stays in the column beside the level panel instead of painting over it. */
 	width: 365px;
@@ -92,6 +92,8 @@ body {
 	position: sticky;
 	top: 350px;
 	z-index: 1;
+	display: flex;
+	gap: 4px;
 	padding-top: 15px;
 	background-color: #333;
 }
@@ -100,16 +102,18 @@ body {
 .buildingsh3,
 .weaponh3,
 .skillsh3,
-.maph3 {
+.maph3,
+.perksh3 {
     border-bottom: none;
-    padding: 8px 15px;
+    padding: 8px 4px;
     text-align: center;
-    width: 140px;
+    flex: 1;
     white-space: nowrap;
     cursor: pointer;
     display: inline-block;
     margin: 0;
     background-color: white;
+    font-size: 0.95em;
 }
 .unitsh3 {
 	background-color: #B69672;
@@ -141,6 +145,13 @@ body {
 	background-color: #6B7F4F;
 	color: white;
 	text-shadow: 1px 1px 2px #2B3F0F;
+	font-weight: 100;
+}
+
+.perksh3 {
+	background-color: #8C6239;
+	color: white;
+	text-shadow: 1px 1px 2px #3A2410;
 	font-weight: 100;
 }
 
@@ -575,6 +586,10 @@ button:disabled {
 	color: #0277BD;
 }
 
+.power-count {
+	color: #E65100;
+}
+
 .level-progress,
 .boss-hp {
 	width: 100%;
@@ -894,6 +909,71 @@ button:disabled {
 
 .skill-maxed {
 	outline: 1px solid #FFD54A;
+}
+
+/* Perks tab */
+
+.perks {
+	background-color: #8C6239;
+	color: white;
+	padding: 15px;
+}
+
+.perks-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 8px;
+}
+
+.perks-header button,
+.perk-card button {
+	font-weight: bold;
+}
+
+.perks-progress,
+.perks-intro,
+.perk-desc {
+	font-size: 0.85em;
+	margin: 4px 0 8px;
+}
+
+.perk-list {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.perk-card {
+	background-color: rgba(0, 0, 0, 0.15);
+	padding: 8px;
+}
+
+.perk-title {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+}
+
+.perk-cost {
+	font-size: 0.8em;
+	white-space: nowrap;
+}
+
+.perk-card button:disabled {
+	color: #333;
+	opacity: 0.75;
+}
+
+.perk-owned {
+	outline: 1px solid #FFD54A;
+}
+
+.prestige-progress {
+	margin-top: 4px;
+	font-size: 0.9em;
 }
 
 .topcontent {

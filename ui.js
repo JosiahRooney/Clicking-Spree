@@ -1,10 +1,11 @@
-import { UNITS, BUILDINGS, ATTACHMENTS, WEAPON_SLOTS, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION, BOSS_POWER_FUZZ, BOSS_RETREAT_PENALTY } from './data.js';
+import { UNITS, BUILDINGS, ATTACHMENTS, WEAPON_SLOTS, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION, BOSS_POWER_FUZZ, BOSS_RETREAT_PENALTY, PERKS, thresholdPoints } from './data.js';
 import {
 	stats, unitCost, attachmentCost, crewNeeded, unitKps, unitSps, displayKps, hvtReward, attackCooldown,
 	magazineRounds, reloadSeconds, finishReload, unseenAttachments, noticeAttachments,
 	canBuyUnit, canBuyAttachment, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
-	levelDef, levelAvailable, levelBeat, canFightBoss, playerPower, bossPower, repeatClearSupplies,
+	levelDef, levelAvailable, levelBeat, canFightBoss, playerPower, bossPower, repeatClearSupplies, supplyPerSecond,
 	buildingCost, buildingRevealed, canBuyBuilding, buildingRate,
+	perkTabBadge, canPrestige, canBuyPerk, autoAttack, nextPerkCost, pendingPrestigePoints, nextPrestigeKills,
 } from './game.js';
 
 // Components are built once and return { el, update(state, env) }.
@@ -105,7 +106,7 @@ const fuzzFactor = (id) => {
 	return 1 + BOSS_POWER_FUZZ * (hash / 500 - 1);
 };
 
-const estimatedBossPower = (def) => bossPower(def) * fuzzFactor(def.id);
+const estimatedBossPower = (def, s) => bossPower(def, s) * fuzzFactor(def.id);
 
 // Five bands of win chance. The chance itself stays off the button.
 const FIGHT_ODDS = [
@@ -133,16 +134,20 @@ const showOutlook = (label, outlook) => {
 function PowerCompare() {
 	const you = h('strong');
 	const boss = h('strong');
-	const el = h('div', { className: 'power-compare' }, 'Your power ', you, ' \u00b7 Boss power ~', boss);
+	const bossPart = h('span', {}, ' \u00b7 Boss power ~', boss);
+	const el = h('div', { className: 'power-compare' }, 'Your power ', you, bossPart);
 
 	return {
 		el,
 		update(s, def) {
 			const player = playerPower(s);
-			const estimate = estimatedBossPower(def);
+			const estimate = estimatedBossPower(def, s);
+			const cleared = s.map.cleared[def.id];
 			setText(you, formatPower(player));
 			setText(boss, formatPower(estimate));
-			el.classList.toggle('power-ready', player >= estimate);
+			// A cleared level has no boss left to compare, but your power stays on screen.
+			bossPart.hidden = cleared;
+			el.classList.toggle('power-ready', !cleared && player >= estimate);
 		},
 	};
 }
@@ -257,18 +262,17 @@ function LevelPanel(actions) {
 			setText(title, levelLabel(def));
 
 			const cleared = s.map.cleared[def.id];
-			power.el.hidden = cleared;
 			power.update(s, def);
 			setText(reward, cleared
-				? `No boss here. +${formatCount(repeatClearSupplies(def))} supplies per clear`
-				: `First clear: +${formatCount(def.supplies)} supplies`);
+				? `No boss here. +${formatCount(repeatClearSupplies(def, s))} supplies per clear`
+				: `First clear: +${formatCount(def.supplies * stats(s).supplyMultiplier)} supplies`);
 			bar.max = def.killsRequired;
 			bar.value = Math.min(s.map.progress[def.id], def.killsRequired);
 			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)} ${cleared ? 'kills toward the next clear' : 'lifetime kills earned here'}`);
 			setText(status, levelStatus(def, s));
 			fightRow.hidden = !canFightBoss(def.id, s);
 			setText(fightButton, `Fight Boss: ${def.boss.name}`);
-			showOutlook(fightOdds, fightOutlook(playerPower(s), estimatedBossPower(def)));
+			showOutlook(fightOdds, fightOutlook(playerPower(s), estimatedBossPower(def, s)));
 
 			progressBlock.hidden = s.boss !== null;
 			bossBlock.hidden = s.boss === null;
@@ -282,7 +286,7 @@ function LevelPanel(actions) {
 				const timeLow = s.boss.timeLeft <= 5;
 				bossTime.classList.toggle('boss-time-low', timeLow);
 				timerBar.classList.toggle('boss-timer-low', timeLow);
-				timerFill.style.width = `${(s.boss.timeLeft / boss.seconds) * 100}%`;
+				timerFill.style.width = `${(s.boss.timeLeft / (s.boss.maxTime ?? boss.seconds)) * 100}%`;
 			}
 
 			if (s.levelStarts > seenLevelStarts) {
@@ -315,6 +319,9 @@ function Header(actions) {
 	const points = h('span');
 	const lifetime = h('span');
 	const supplies = h('strong', { className: 'supplies-count' });
+	const sps = h('span', { className: 'supplies-count' });
+	const power = h('strong', { className: 'power-count' });
+	const prestige = h('div', { className: 'prestige-progress' });
 	const levelPanel = LevelPanel(actions);
 	const hvtButton = h('button', { className: 'hvt-button', type: 'button', hidden: true, onClick: actions.clickHvt });
 	const loadButton = h('button', { type: 'button', onClick: actions.load }, 'Load');
@@ -360,12 +367,13 @@ function Header(actions) {
 			loadButton, ' ', saveButton, ' ', resetButton,
 		),
 		levelPanel.el,
-		h('p', {}, 'Click or hold the button to attack. It fires until the magazine is empty, then reloads. Spend kills on troops and attachments.'),
 		attackButton,
 		h('div', { className: 'killz' },
 			'You have ', kills, ' kills.', h('br'),
-			'You have ', kps, ' kills per second (KPS).',
-			h('div', { className: 'lifetime-kills' }, 'Supplies: ', supplies, ' \u00b7 Lifetime kills: ', lifetime),
+			'You have ', kps, ' kills per second (KPS).', h('br'),
+			'Power: ', power, '.',
+			h('div', { className: 'lifetime-kills' }, 'Supplies: ', supplies, ' (', sps, '/s) \u00b7 Lifetime kills: ', lifetime),
+			prestige,
 			h('div', { className: 'player-info' },
 				h('span', { className: 'player-xp' }, 'Level ', level, ' ', xpBar, ' ', xpText),
 				h('span', { className: 'skill-points' }, points, ' skill points'),
@@ -410,8 +418,18 @@ function Header(actions) {
 			setText(points, skillPoints(s));
 			setText(lifetime, formatCount(s.lifetimeKills));
 			setText(supplies, formatCount(s.supplies));
+			setText(sps, formatNumber(supplyPerSecond(s)));
+			setText(power, formatPower(playerPower(s)));
+			const prestigeKills = nextPrestigeKills(s);
+			const prestigeReady = canPrestige(s);
+			const prestigeReward = prestigeReady ? pendingPrestigePoints(s) : thresholdPoints(s.thresholdsClaimed);
+			const rewardLabel = `${formatCount(prestigeReward)} perk ${prestigeReward === 1 ? 'point' : 'points'}`;
+			setText(prestige, prestigeReady
+				? `Prestige ready · ${formatCount(s.lifetimeKills)} / ${formatCount(prestigeKills)} · ${rewardLabel}`
+				: `Prestige: ${formatCount(s.lifetimeKills)} / ${formatCount(prestigeKills)} · ${rewardLabel}`);
 			loadButton.disabled = !env.hasSave;
 			finishReload(s);
+			const firing = holding || autoAttack(s);
 			const readyAt = Math.max(s.nextAttackAt, s.reloadUntil);
 			const wait = Math.max(0, readyAt - Date.now());
 			const reloading = s.ammo <= 0 && s.reloadUntil > Date.now();
@@ -420,10 +438,15 @@ function Header(actions) {
 			if (wait === 0) {
 				clearTimeout(cooldownTimer);
 				cooldownTimer = null;
-				armedUntil = readyAt;
-				cooldownFill.style.transition = 'none';
-				cooldownFill.style.width = '0';
-			} else if (readyAt !== armedUntil || (holding && cooldownTimer === null)) {
+				if (firing) {
+					// The shot's render schedules the next one. Setting the bar here would wipe that.
+					actions.attack();
+				} else {
+					armedUntil = readyAt;
+					cooldownFill.style.transition = 'none';
+					cooldownFill.style.width = '0';
+				}
+			} else if (readyAt !== armedUntil || (firing && cooldownTimer === null)) {
 				if (readyAt !== armedUntil) {
 					armedUntil = readyAt;
 					const total = (reloading ? reloadSeconds(s) : attackCooldown(s)) * 1000;
@@ -437,7 +460,7 @@ function Header(actions) {
 				clearTimeout(cooldownTimer);
 				cooldownTimer = setTimeout(() => {
 					cooldownTimer = null;
-					if (holding) actions.attack();
+					if (holding || autoAttack()) actions.attack();
 					else actions.render();
 				}, Math.max(0, readyAt - Date.now()));
 			}
@@ -866,18 +889,17 @@ function LevelRow(def, actions) {
 			el.classList.toggle('level-active', active);
 			setText(status, `${active ? 'Active \u00b7 ' : ''}${levelStatus(def, s)}`);
 			const cleared = s.map.cleared[def.id];
-			power.el.hidden = cleared;
 			power.update(s, def);
 			setText(reward, cleared
-				? `+${formatCount(repeatClearSupplies(def))} supplies per clear`
-				: `First clear: +${formatCount(def.supplies)} supplies`);
+				? `+${formatCount(repeatClearSupplies(def, s))} supplies per clear`
+				: `First clear: +${formatCount(def.supplies * stats(s).supplyMultiplier)} supplies`);
 			bar.max = def.killsRequired;
 			// A cleared level restarts from zero when deployed to, so only the active one shows partial progress.
 			bar.value = cleared && !active ? def.killsRequired : Math.min(s.map.progress[def.id], def.killsRequired);
 			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)}`);
 			deployButton.hidden = !available || active || s.boss !== null;
 			fightRow.hidden = !canFightBoss(def.id, s);
-			showOutlook(fightOdds, fightOutlook(playerPower(s), estimatedBossPower(def)));
+			showOutlook(fightOdds, fightOutlook(playerPower(s), estimatedBossPower(def, s)));
 		},
 	};
 }
@@ -918,6 +940,74 @@ function MapPanel(actions) {
 
 
 
+// ======== Perks ========
+
+function PerkCard(def, actions) {
+	const button = h('button', { type: 'button', onClick: () => actions.buyPerk(def.id) }, def.name);
+	const cost = h('span', { className: 'perk-cost' });
+	const el = h('div', { className: 'perk-card' },
+		h('div', { className: 'perk-title' }, button, cost),
+		h('p', { className: 'perk-desc' }, def.description),
+	);
+
+	return {
+		el,
+		update(s) {
+			const owned = s.perks[def.id];
+			const price = nextPerkCost(s);
+			const noun = price === 1 ? 'perk point' : 'perk points';
+			setText(cost, owned ? 'Owned' : `${formatCount(price)} ${noun}`);
+			button.disabled = !canBuyPerk(def.id, s);
+			el.classList.toggle('perk-owned', owned);
+		},
+	};
+}
+
+function PerksPanel(actions) {
+	const cards = PERKS.map((def) => PerkCard(def, actions));
+	const points = h('strong');
+	const count = h('span');
+	const progress = h('span');
+	let reward = 1;
+	const prestigeButton = h('button', {
+		type: 'button',
+		className: 'prestige-button',
+		onClick: () => {
+			if (prestigeButton.disabled) return;
+			const noun = reward === 1 ? 'perk point' : 'perk points';
+			const message = `Prestige for ${formatCount(reward)} ${noun}? Kills, units, buildings, weapon, skills, supplies, and map progress reset. Perks and unspent perk points stay.`;
+			if (confirm(message)) actions.prestige();
+		},
+	});
+	const el = h('div', { className: 'perks' },
+		h('div', { className: 'perks-header' },
+			h('span', {}, 'Perk points: ', points, ' · Prestiges: ', count),
+			prestigeButton,
+		),
+		h('p', { className: 'perks-progress' }, progress),
+		h('p', { className: 'perks-intro' }, 'Prestige resets the run and pays perk points for every kill threshold this run has passed. 1,000,000 pays 1 point, 5,000,000 pays 2, the next pays 4, and so on. Every perk costs the same: 1 point, then 2 after your first purchase, then 4. Perks stay.'),
+		h('div', { className: 'perk-list' }, cards.map((card) => card.el)),
+	);
+
+	return {
+		el,
+		update(s) {
+			el.hidden = s.activeTab !== 'perks';
+			setText(points, formatCount(s.perkPoints));
+			setText(count, s.prestigeCount);
+			const ready = canPrestige(s);
+			reward = ready ? pendingPrestigePoints(s) : thresholdPoints(s.thresholdsClaimed);
+			const required = nextPrestigeKills(s);
+			setText(progress, `${formatCount(s.lifetimeKills)} / ${formatCount(required)} lifetime kills`);
+			prestigeButton.disabled = !ready;
+			setText(prestigeButton, `Prestige for ${formatCount(reward)} perk ${reward === 1 ? 'point' : 'points'}`);
+			cards.forEach((card) => card.update(s));
+		},
+	};
+}
+
+
+
 // ======== App ========
 
 function Tab(id, name, actions, countAvailable = () => 0) {
@@ -943,24 +1033,27 @@ export function App(actions) {
 	const weapon = WeaponPanel(actions);
 	const skills = SkillsPanel(actions);
 	const map = MapPanel(actions);
+	const perks = PerksPanel(actions);
 	const tabs = [
 		Tab('units', 'Units', actions),
 		Tab('buildings', 'Buildings', actions, availableBuildings),
 		Tab('weapon', 'Weapon', actions, availableAttachments),
 		Tab('skills', 'Skills', actions, skillPoints),
 		Tab('map', 'Map', actions, bossesReady),
+		Tab('perks', 'Perks', actions, perkTabBadge),
 	];
 
 	const el = h('div', { className: 'mainwrap' },
 		h('div', { className: 'maincontent' },
 			header.el,
 			h('div', { className: 'bottomcontent' },
-				h('div', { className: 'tab-bar' }, tabs.flatMap((tab, i) => (i === 0 ? [tab.el] : [' ', tab.el]))),
+				h('div', { className: 'tab-bar' }, tabs.map((tab) => tab.el)),
 				units.el,
 				buildings.el,
 				weapon.el,
 				skills.el,
 				map.el,
+				perks.el,
 			),
 		),
 	);
@@ -976,6 +1069,7 @@ export function App(actions) {
 			weapon.update(s);
 			skills.update(s);
 			map.update(s);
+			perks.update(s);
 		},
 	};
 }

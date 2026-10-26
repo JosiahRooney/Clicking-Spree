@@ -23,6 +23,7 @@ A little incremental game made in JavaScript.
 - Supplies: the first clear of each level pays a big supply reward, and later levels pay much more
 - Cleared levels can be replayed for supplies: each time you reach the kill goal again you collect 10% of the first-clear reward and stay on that level
 - Buildings, bought with supplies: one per unit type (Barracks, Firing Range, Supply Depot, up to the Bomber Hangar), each producing its unit for free on a timer that gets faster with every extra building
+- Perks, bought with perk points on their own tab. Prestige resets the run (kills, troops, buildings, weapon, skills, supplies, and the map) and pays perk points for every kill threshold that run passed: 1,000,000 pays 1, 5,000,000 pays 2, the next pays 4, and so on. Perks stay. Every unbought perk costs the same, starting at 1 point and doubling after each purchase
 - Numbers from 1,000 up can be shown in scientific notation (1.22e4) or with suffixes (12.2K). Two buttons in the header switch between them, and the choice is remembered
 - Save your progress in the browser (localStorage), with an autosave every 15 seconds; it loads automatically next time you open the game
 - Plain JavaScript (ES modules) with no dependencies; the whole page is built from the unit and attachment data in `data.js`
@@ -44,6 +45,7 @@ Then open the localhost URL it prints.
 
 ## Changelog
 
+- v1.11 - Perks and prestige. Prestige resets the run and pays perk points for each kill threshold passed (1,000,000 pays 1, then 2, then 4). Twenty perks, bought in any order, persist across prestiges. The header shows power and supplies per second
 - v1.9 - Weapon tab replaces the upgrade chain: buy attachments and they equip, with a basic barrel, magazine, iron sights, and stock to start. Attacks have a cooldown and can be held to fire; magazines hold ammo and reload. New unlocks badge their slot. Boss buttons show the fight outlook. Building progress bars fill to the end
 - v1.8 - scientific and suffix notation for large numbers, with a header switch that is remembered, and unit prices that count purchases only
 - v1.7 - supplies earned by clearing levels, replayable cleared levels with batched clear messages, a Buildings tab where supply-bought buildings produce free units, the HEMET truck (supplies per second) and its Supply Depot, the Barracks tab renamed to Units, and boss HP rebalanced around buildings

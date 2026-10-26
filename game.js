@@ -3,6 +3,7 @@ import {
 	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, HVT, LEVELS,
 	BASE_ATTACK_COOLDOWN, BASE_MAG_ROUNDS, BASE_RELOAD_SECONDS, BOSS_RETREAT_PENALTY, REPEAT_CLEAR_SHARE,
 	BUILDINGS, BUILDING_COST_GROWTH, BUILDING_SPEEDUP,
+	PERKS, perkCost, prestigePoints, prestigeKillsRequired, thresholdsReached, thresholdPoints,
 } from './data.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
@@ -41,6 +42,13 @@ const freshState = () => ({
 		seen: Object.fromEntries(ATTACHMENTS.map((def) => [def.id, Boolean(def.starter)])),
 	},
 	skills: Object.fromEntries(SKILLS.map((def) => [def.id, 0])),
+	// Bought with perk points. Kept across prestiges, wiped only by a full reset.
+	perks: Object.fromEntries(PERKS.map((def) => [def.id, false])),
+	perkPoints: 0,
+	// How many times this save has prestiged.
+	prestigeCount: 0,
+	// Thresholds already paid out. The next one is worth 2 to this power.
+	thresholdsClaimed: 0,
 	revealed: {
 		units: Object.fromEntries(UNITS.map((def) => [def.id, false])),
 		attachments: Object.fromEntries(ATTACHMENTS.map((def) => [def.id, Boolean(def.starter)])),
@@ -107,6 +115,47 @@ export const canBuySkill = (def, s = state) => skillPoints(s) > 0
 
 
 
+// ======== Perks ========
+
+const perkByType = new Map(PERKS.map((def) => [def.effect.type, def]));
+
+// Owned perks contribute their amount. Anything else uses the fallback (usually 1 or 0).
+const perkAmount = (s, type, fallback) => {
+	const def = perkByType.get(type);
+	return def && s.perks[def.id] ? def.effect.amount : fallback;
+};
+
+export const canPrestige = (s = state) => thresholdsReached(s.lifetimeKills, s.thresholdsClaimed) > s.thresholdsClaimed;
+
+// Points a prestige would pay right now: every newly passed threshold, summed.
+export const pendingPrestigePoints = (s = state) => prestigePoints(s.lifetimeKills, s.thresholdsClaimed);
+
+// The next threshold this run has not reached yet.
+export const nextPrestigeKills = (s = state) => prestigeKillsRequired(thresholdsReached(s.lifetimeKills, s.thresholdsClaimed));
+
+const perksOwned = (s) => PERKS.filter((def) => s.perks[def.id]).length;
+
+export const nextPerkCost = (s = state) => perkCost(perksOwned(s));
+
+export const canBuyPerk = (id, s = state) => PERKS.some((def) => def.id === id)
+	&& !s.perks[id]
+	&& s.perkPoints >= nextPerkCost(s);
+
+export const affordablePerks = (s = state) => (s.perkPoints >= nextPerkCost(s)
+	? PERKS.filter((def) => !s.perks[def.id]).length
+	: 0);
+
+// Badge: perks you can afford, or 1 when prestige is ready and nothing is affordable yet.
+export const perkTabBadge = (s = state) => {
+	const affordable = affordablePerks(s);
+	if (affordable > 0) return affordable;
+	return canPrestige(s) ? 1 : 0;
+};
+
+export const autoAttack = (s = state) => perkAmount(s, 'autoAttack', 0) > 0;
+
+
+
 // ======== Derived values ========
 
 const matchingSkills = (s, type, group) => SKILLS.filter((def) => s.skills[def.id] > 0
@@ -134,15 +183,15 @@ export const stats = (s = state) => ({
 	clickBonus: 1 + effectSum(s, 'click'),
 
 	// Assault
-	clickMultiplier: 1 + effectTotal(s, 'clickBonus'),
-	kpsMultiplier: (def) => 1 + effectTotal(s, 'kpsBonus') + effectTotal(s, 'groupKpsBonus', def.group),
+	clickMultiplier: (1 + effectTotal(s, 'clickBonus')) * perkAmount(s, 'clickMultiplier', 1),
+	kpsMultiplier: (def) => (1 + effectTotal(s, 'kpsBonus') + effectTotal(s, 'groupKpsBonus', def.group)) * perkAmount(s, 'kpsMultiplier', 1),
 	clickKpsShare: effectTotal(s, 'clickKpsShare'),
-	allKillsMultiplier: 1 + effectTotal(s, 'allKillsBonus'),
+	allKillsMultiplier: 1 + effectTotal(s, 'allKillsBonus') + perkAmount(s, 'allKillsBonus', 0),
 
 	// Intel. Accessory and sight crit is added on top of skill crit.
 	critChance: effectTotal(s, 'critChance') + effectSum(s, 'crit'),
 	critMultiplier: BASE_CRIT_MULTIPLIER + effectTotal(s, 'critMultiplier'),
-	recruitRolls: 1 + effectTotal(s, 'recruitRolls'),
+	recruitRolls: 1 + effectTotal(s, 'recruitRolls') + perkAmount(s, 'recruitRolls', 0),
 	casChance: BASE_CAS_CHANCE + effectTotal(s, 'casChance'),
 	hvtUnlocked: effectTotal(s, 'hvtUnlock') > 0,
 	hvtFrequency: 1 + HVT.analysisFrequency * effectTotal(s, 'hvtAnalysis'),
@@ -150,12 +199,12 @@ export const stats = (s = state) => ({
 	tickCritChance: effectTotal(s, 'tickCritChance'),
 
 	// Logistics
-	unitCostMultiplier: (def) => discountFactor(s, 'unitDiscount') * discountFactor(s, 'groupDiscount', def.group),
+	unitCostMultiplier: (def) => discountFactor(s, 'unitDiscount') * discountFactor(s, 'groupDiscount', def.group) * perkAmount(s, 'unitCostMultiplier', 1),
 	upgradeCostMultiplier: discountFactor(s, 'upgradeDiscount'),
-	costGrowth: 1.1 - effectTotal(s, 'costGrowthReduction'),
-	crewReduction: effectTotal(s, 'crewReduction'),
-	// Raises supplies per second from logistics units. Upgrades can add to this later.
-	supplyMultiplier: 1,
+	// Price Freeze and Price Controls both subtract. Never let a purchase get cheaper than the last.
+	costGrowth: Math.max(1.01, 1.1 - effectTotal(s, 'costGrowthReduction') - perkAmount(s, 'costGrowthReduction', 0)),
+	crewReduction: effectTotal(s, 'crewReduction') + perkAmount(s, 'crewReduction', 0),
+	supplyMultiplier: perkAmount(s, 'supplyMultiplier', 1),
 });
 
 export const unitCost = (def, s = state) => {
@@ -173,13 +222,13 @@ export const unitKps = (def, s = state) => def.kps * stats(s).kpsMultiplier(def)
 // Seconds between attacks. Barrel attachments multiply this (lower is faster).
 export const attackCooldown = (s = state) => BASE_ATTACK_COOLDOWN * equippedAttachments(s)
 	.filter((def) => def.effect.type === 'speed')
-	.reduce((factor, def) => factor * def.effect.amount, 1);
+	.reduce((factor, def) => factor * def.effect.amount, 1) * perkAmount(s, 'cooldownMultiplier', 1);
 
 const equippedMagazine = (s) => equippedAttachments(s).find((def) => def.effect.type === 'magazine');
 
-export const magazineRounds = (s = state) => equippedMagazine(s)?.effect.rounds ?? BASE_MAG_ROUNDS;
+export const magazineRounds = (s = state) => (equippedMagazine(s)?.effect.rounds ?? BASE_MAG_ROUNDS) * perkAmount(s, 'magazineMultiplier', 1);
 
-export const reloadSeconds = (s = state) => BASE_RELOAD_SECONDS * (equippedMagazine(s)?.effect.reload ?? 1);
+export const reloadSeconds = (s = state) => BASE_RELOAD_SECONDS * (equippedMagazine(s)?.effect.reload ?? 1) * perkAmount(s, 'reloadMultiplier', 1);
 
 // A finished reload refills the mag. Called from the attack loop and the UI timer.
 export function finishReload(s = state) {
@@ -226,11 +275,16 @@ export const playerPower = (s = state) => {
 	const cooldown = attackCooldown(s);
 	const rounds = magazineRounds(s);
 	// Sustained fire rate, with the reload pause counted in.
-	const shotsPerSecond = rounds / (rounds * cooldown + reloadSeconds(s));
+	// Immediate Action skips a share of reloads, so the expected pause is shorter than a full reload.
+	const shotsPerSecond = rounds / (rounds * cooldown + reloadSeconds(s) * (1 - perkAmount(s, 'skipReload', 0)));
 	return (troops + click * shotsPerSecond) * allKillsMultiplier;
 };
 
-export const bossPower = (def) => def.boss.hp / def.boss.seconds;
+export const bossHp = (def, s = state) => def.boss.hp * perkAmount(s, 'bossHpMultiplier', 1);
+
+export const bossSeconds = (def, s = state) => def.boss.seconds * perkAmount(s, 'bossTimeMultiplier', 1);
+
+export const bossPower = (def, s = state) => bossHp(def, s) / bossSeconds(def, s);
 
 const hvtBaseReward = (s) => Math.max(HVT.minReward, s.kps * HVT.rewardSeconds) * stats(s).hvtRewardMultiplier;
 
@@ -253,7 +307,12 @@ export const levelAvailable = (id, s = state) => {
 
 // ======== Buildings ========
 
-export const buildingCost = (def, s = state) => Math.floor(def.baseCost * BUILDING_COST_GROWTH ** s.buildings[def.id]);
+export const buildingCost = (def, s = state) => {
+	const owned = s.buildings[def.id];
+	const every = perkAmount(s, 'freeFifth', 0);
+	if (every > 0 && (owned + 1) % every === 0) return 0;
+	return Math.floor(def.baseCost * BUILDING_COST_GROWTH ** owned);
+};
 
 // A building shows up once the unit it produces has been revealed.
 export const buildingRevealed = (def, s = state) => s.revealed.units[def.unit];
@@ -263,10 +322,11 @@ export const canBuyBuilding = (def, s = state) => buildingRevealed(def, s) && s.
 // Units per second from all buildings of this type: each one after the first adds BUILDING_SPEEDUP of the base rate.
 export const buildingRate = (def, s = state) => {
 	const count = s.buildings[def.id];
-	return count === 0 ? 0 : (1 + BUILDING_SPEEDUP * (count - 1)) / def.seconds;
+	if (count === 0) return 0;
+	return perkAmount(s, 'buildingSpeed', 1) * (1 + BUILDING_SPEEDUP * (count - 1)) / def.seconds;
 };
 
-export const repeatClearSupplies = (def) => def.supplies * REPEAT_CLEAR_SHARE;
+export const repeatClearSupplies = (def, s = state) => def.supplies * REPEAT_CLEAR_SHARE * stats(s).supplyMultiplier;
 
 export const levelBeat = (id, s = state) => s.map.progress[id] >= levelDef[id].killsRequired;
 
@@ -282,7 +342,8 @@ export const canFightBoss = (id, s = state) => !s.boss
 function earn(amount) {
 	const earned = amount * stats().allKillsMultiplier;
 	state.kills += earned;
-	state.xp += earned;
+	// War College doubles XP only. Prestige and the map still count the kills themselves.
+	state.xp += earned * perkAmount(state, 'xpMultiplier', 1);
 	state.lifetimeKills += earned;
 	state.map.progress[state.map.activeLevel] += earned;
 	repeatClears();
@@ -328,8 +389,10 @@ export function startBoss(id) {
 	if (!canFightBoss(id)) {
 		return;
 	}
-	const { hp, seconds } = levelDef[id].boss;
-	state.boss = { levelId: id, hp, maxHp: hp, timeLeft: seconds };
+	const def = levelDef[id];
+	const maxHp = bossHp(def);
+	const time = bossSeconds(def);
+	state.boss = { levelId: id, hp: maxHp, maxHp, timeLeft: time, maxTime: time };
 }
 
 function winBoss() {
@@ -341,13 +404,14 @@ function winBoss() {
 	const def = levelDef[id];
 	state.map.cleared[id] = true;
 	state.map.progress[id] = 0;
-	state.supplies += def.supplies;
+	const paid = def.supplies * stats().supplyMultiplier;
+	state.supplies += paid;
 	const next = LEVELS[LEVELS.indexOf(def) + 1];
 	if (next) {
-		startLevel(next.id, def.boss.name, def.supplies);
+		startLevel(next.id, def.boss.name, paid);
 	} else {
 		state.levelStarts += 1;
-		state.lastLevelStart = { levelId: id, defeatedBoss: def.boss.name, supplies: def.supplies };
+		state.lastLevelStart = { levelId: id, defeatedBoss: def.boss.name, supplies: paid };
 	}
 }
 
@@ -399,7 +463,12 @@ export function attack() {
 	state.lastAttack = { amount: earn(crit ? amount * critMultiplier : amount), crit };
 	state.nextAttackAt = now + attackCooldown() * 1000;
 	if (state.ammo <= 0) {
-		state.reloadUntil = now + reloadSeconds() * 1000;
+		// Immediate Action: a successful roll refills the mag instead of starting the reload.
+		if (Math.random() < perkAmount(state, 'skipReload', 0)) {
+			state.ammo = magazineRounds();
+		} else {
+			state.reloadUntil = now + reloadSeconds() * 1000;
+		}
 	}
 }
 
@@ -410,7 +479,7 @@ export function buyUnit(id) {
 	}
 	const crew = crewNeeded(def);
 	state.kills -= unitCost(def);
-	state.units[id] += 1;
+	state.units[id] += perkAmount(state, 'doubleEnlist', 1);
 	state.bought[id] += 1;
 	if (def.needs) {
 		state.units[def.needs.unit] -= crew;
@@ -482,6 +551,32 @@ export function buySkill(id) {
 	if (canBuySkill(def)) {
 		state.skills[id] += 1;
 	}
+}
+
+export function buyPerk(id) {
+	if (!canBuyPerk(id)) return;
+	const previous = magazineRounds();
+	state.perkPoints -= nextPerkCost();
+	state.perks[id] = true;
+	// A larger magazine fills immediately, the same as equipping one.
+	syncAmmo(previous);
+}
+
+export function prestige() {
+	if (!canPrestige()) return;
+	const keptPerks = { ...state.perks };
+	const points = state.perkPoints + pendingPrestigePoints();
+	const count = state.prestigeCount + 1;
+	const claimed = thresholdsReached(state.lifetimeKills, state.thresholdsClaimed);
+	Object.assign(state, freshState());
+	state.perks = keptPerks;
+	state.perkPoints = points;
+	state.prestigeCount = count;
+	state.thresholdsClaimed = claimed;
+	state.activeTab = 'perks';
+	const recruits = perkAmount(state, 'startingRecruits', 0);
+	if (recruits > 0) state.units.recruit += recruits;
+	state.ammo = magazineRounds();
 }
 
 export function resetGame() {
@@ -592,6 +687,10 @@ export const serialize = (s = state) => JSON.stringify({
 	supplies: s.supplies,
 	buildings: s.buildings,
 	buildingProgress: s.buildingProgress,
+	perks: s.perks,
+	perkPoints: s.perkPoints,
+	prestigeCount: s.prestigeCount,
+	thresholdsClaimed: s.thresholdsClaimed,
 });
 
 const clampRank = (value, def) => Math.min(def.maxRank, Math.max(0, Math.floor(Number(value) || 0)));
@@ -677,6 +776,18 @@ export function deserialize(json, s = state) {
 		const progress = Number(save.buildingProgress?.[def.id]) || 0;
 		fresh.buildingProgress[def.id] = Math.min(Math.max(progress, 0), 0.999);
 	}
+	fresh.prestigeCount = Math.max(0, Math.floor(Number(save.prestigeCount) || 0));
+	// Older saves paid one threshold per prestige, so the claimed count matches that.
+	const claimed = Number(save.thresholdsClaimed);
+	fresh.thresholdsClaimed = Number.isFinite(claimed)
+		? Math.max(0, Math.floor(claimed))
+		: fresh.prestigeCount;
+	for (const def of PERKS) {
+		fresh.perks[def.id] = save.perks?.[def.id] === true;
+	}
+	// Points ever granted are 2^claimed - 1. Clamp a bad save; owned perks are left alone.
+	const pointsEarned = thresholdPoints(fresh.thresholdsClaimed) - 1;
+	fresh.perkPoints = Math.min(pointsEarned, Math.max(0, Math.floor(Number(save.perkPoints) || 0)));
 	const savedLevel = save.map?.activeLevel;
 	if (levelDef[savedLevel] && levelAvailable(savedLevel, fresh)) {
 		fresh.map.activeLevel = savedLevel;

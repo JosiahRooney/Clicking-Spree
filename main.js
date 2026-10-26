@@ -1,6 +1,6 @@
 import {
 	state, attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment,
-	buySkill, resetSkills, resetGame, clickHvt, setTab,
+	buySkill, resetSkills, resetGame, clickHvt, setTab, buyPerk, prestige,
 	selectLevel, startBoss, tick, updateReveals, serialize, deserialize,
 } from './game.js';
 import { App, loadNotation } from './ui.js';
@@ -32,7 +32,7 @@ function load() {
 }
 
 function reset() {
-	if (!confirm('Reset the game? All kills, units, attachments, XP, skills and map progress will be lost, including your save.')) {
+	if (!confirm('Reset the game? All kills, units, attachments, XP, skills, map progress, perks and perk points will be lost, including your save.')) {
 		return;
 	}
 	resetGame();
@@ -45,7 +45,7 @@ function render() {
 	app.update(state, { hasSave: hasSave() });
 }
 
-const appActions = withRender({ attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment, buySkill, resetSkills, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
+const appActions = withRender({ attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment, buySkill, resetSkills, buyPerk, prestige, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
 app = App({ ...appActions, render });
 document.getElementById('app').append(app.el);
 
