@@ -3,7 +3,7 @@ import {
 	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, HVT, LEVELS,
 	BASE_ATTACK_COOLDOWN, BASE_MAG_ROUNDS, BASE_RELOAD_SECONDS, BOSS_RETREAT_PENALTY, REPEAT_CLEAR_SHARE,
 	BUILDINGS, BUILDING_COST_GROWTH, BUILDING_SPEEDUP,
-	PERKS, perkCost, prestigePoints, prestigeKillsRequired, thresholdsReached, thresholdPoints,
+	PERKS, perkCost, prestigePoints, prestigeKillsRequired, thresholdsReached,
 } from './data.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
@@ -45,6 +45,10 @@ const freshState = () => ({
 	// Bought with perk points. Kept across prestiges, wiped only by a full reset.
 	perks: Object.fromEntries(PERKS.map((def) => [def.id, false])),
 	perkPoints: 0,
+	// Extra skill points from the debug panel. Levels alone stop at 999.
+	bonusSkillPoints: 0,
+	// How many of the next unit or building a click buys. 'max' spends everything that can.
+	buyAmount: 1,
 	// How many times this save has prestiged.
 	prestigeCount: 0,
 	// Thresholds already paid out. The next one is worth 2 to this power.
@@ -102,7 +106,7 @@ const pointsSpent = (s, branch) => SKILLS
 
 export const branchPoints = (s, branch) => pointsSpent(s, branch);
 
-export const skillPoints = (s = state) => levelFromXp(s.xp) - 1 - pointsSpent(s);
+export const skillPoints = (s = state) => levelFromXp(s.xp) - 1 - pointsSpent(s) + (s.bonusSkillPoints || 0);
 
 export const tierRequirement = (tier) => TIER_REQUIREMENTS[tier - 1];
 
@@ -319,6 +323,110 @@ export const buildingRevealed = (def, s = state) => s.revealed.units[def.unit];
 
 export const canBuyBuilding = (def, s = state) => buildingRevealed(def, s) && s.supplies >= buildingCost(def, s);
 
+// One click will not buy more than this, so Max stays responsive with a huge balance.
+const MAX_PURCHASE = 1_000_000;
+
+// Sum of floor(start * growth^i) for i in 0..n-1. The head is exact; a long tail is the geometric sum.
+const seriesCost = (start, growth, n) => {
+	if (n <= 0 || !(start > 0)) return 0;
+	let sum = 0;
+	let price = start;
+	const exact = Math.min(n, 4096);
+	for (let i = 0; i < exact; i++) {
+		sum += Math.floor(price + 1e-9);
+		price *= growth;
+		if (!Number.isFinite(sum)) return Infinity;
+	}
+	if (exact === n) return sum;
+	if (!(growth > 1)) return sum + Math.floor(price + 1e-9) * (n - exact);
+	const rest = price * (growth ** (n - exact) - 1) / (growth - 1);
+	// Ceil keeps a long tail from undercharging. Past the exact head each term dwarfs the rounding.
+	return sum + (Number.isFinite(rest) ? Math.ceil(rest) : Infinity);
+};
+
+// Largest count <= cap whose series fits in money.
+const affordableCount = (money, start, growth, cap) => {
+	if (!(cap > 0) || !(money >= Math.floor(start + 1e-9))) return 0;
+	const limit = Math.min(cap, MAX_PURCHASE);
+	let lo = 0;
+	let hi = 1;
+	while (hi < limit && seriesCost(start, growth, hi) <= money) {
+		lo = hi;
+		hi = Math.min(limit, hi * 2);
+		if (hi === lo) break;
+	}
+	if (seriesCost(start, growth, hi) <= money) return hi;
+	while (lo + 1 < hi) {
+		const mid = Math.floor((lo + hi) / 2);
+		if (seriesCost(start, growth, mid) <= money) lo = mid;
+		else hi = mid;
+	}
+	return lo;
+};
+
+const wantedCount = (s) => (s.buyAmount === 'max' ? MAX_PURCHASE : Number(s.buyAmount) || 1);
+
+const unitStartPrice = (def, s) => {
+	const { unitCostMultiplier, costGrowth } = stats(s);
+	return def.baseCost * unitCostMultiplier(def) * costGrowth ** s.bought[def.id];
+};
+
+// count is how many this click buys. A fixed 5x or 100x stays at 0 until the whole batch fits.
+export const quoteUnit = (def, s = state) => {
+	const want = wantedCount(s);
+	const { costGrowth } = stats(s);
+	const start = unitStartPrice(def, s);
+	const crewEach = def.needs ? crewNeeded(def, s) : 0;
+	const crewCap = crewEach > 0 ? Math.floor(s.units[def.needs.unit] / crewEach) : want;
+	const fitted = affordableCount(s.kills, start, costGrowth, Math.min(want, crewCap));
+	const count = s.buyAmount === 'max' ? fitted : (fitted >= want ? want : 0);
+	const shown = count > 0 ? count : (s.buyAmount === 'max' ? 1 : want);
+	return { count, cost: seriesCost(start, costGrowth, shown) };
+};
+
+const buildingBulkCost = (def, n, s) => {
+	if (n <= 0) return 0;
+	const owned = s.buildings[def.id];
+	const growth = BUILDING_COST_GROWTH;
+	const sum = seriesCost(def.baseCost * growth ** owned, growth, n);
+	const every = perkAmount(s, 'freeFifth', 0);
+	if (!(every > 0)) return sum;
+	const startI = (every - ((owned + 1) % every)) % every;
+	if (startI >= n) return sum;
+	const freeCount = Math.floor((n - 1 - startI) / every) + 1;
+	const freeStart = def.baseCost * growth ** (owned + startI);
+	return Math.max(0, sum - seriesCost(freeStart, growth ** every, freeCount));
+};
+
+export const quoteBuilding = (def, s = state) => {
+	const want = wantedCount(s);
+	let lo = 0;
+	let hi = 1;
+	const limit = want;
+	while (hi < limit && buildingBulkCost(def, hi, s) <= s.supplies) {
+		lo = hi;
+		hi = Math.min(limit, hi * 2);
+		if (hi === lo) break;
+	}
+	let fitted = 0;
+	if (buildingBulkCost(def, hi, s) <= s.supplies) fitted = hi;
+	else {
+		while (lo + 1 < hi) {
+			const mid = Math.floor((lo + hi) / 2);
+			if (buildingBulkCost(def, mid, s) <= s.supplies) lo = mid;
+			else hi = mid;
+		}
+		fitted = lo;
+	}
+	const count = s.buyAmount === 'max' ? fitted : (fitted >= want ? want : 0);
+	const shown = count > 0 ? count : (s.buyAmount === 'max' ? 1 : want);
+	return { count, cost: buildingBulkCost(def, shown, s) };
+};
+
+export function setBuyAmount(amount) {
+	if (amount === 1 || amount === 5 || amount === 100 || amount === 'max') state.buyAmount = amount;
+}
+
 // Units per second from all buildings of this type: each one after the first adds BUILDING_SPEEDUP of the base rate.
 export const buildingRate = (def, s = state) => {
 	const count = s.buildings[def.id];
@@ -474,25 +582,22 @@ export function attack() {
 
 export function buyUnit(id) {
 	const def = unitDef[id];
-	if (!canBuyUnit(def)) {
-		return;
-	}
+	const { count, cost } = quoteUnit(def);
+	if (count < 1) return;
 	const crew = crewNeeded(def);
-	state.kills -= unitCost(def);
-	state.units[id] += perkAmount(state, 'doubleEnlist', 1);
-	state.bought[id] += 1;
-	if (def.needs) {
-		state.units[def.needs.unit] -= crew;
-	}
+	state.kills -= cost;
+	state.units[id] += count * perkAmount(state, 'doubleEnlist', 1);
+	state.bought[id] += count;
+	if (def.needs) state.units[def.needs.unit] -= count * crew;
 }
 
 export function buyBuilding(id) {
 	const def = buildingDef[id];
-	if (!canBuyBuilding(def)) {
-		return;
-	}
-	state.supplies -= buildingCost(def);
-	state.buildings[id] += 1;
+	if (!buildingRevealed(def)) return;
+	const { count, cost } = quoteBuilding(def);
+	if (count < 1) return;
+	state.supplies -= cost;
+	state.buildings[id] += count;
 }
 
 // Produced units are free: no kills and no crew. Leftover progress carries into the next second.
@@ -568,11 +673,13 @@ export function prestige() {
 	const points = state.perkPoints + pendingPrestigePoints();
 	const count = state.prestigeCount + 1;
 	const claimed = thresholdsReached(state.lifetimeKills, state.thresholdsClaimed);
+	const buyAmount = state.buyAmount;
 	Object.assign(state, freshState());
 	state.perks = keptPerks;
 	state.perkPoints = points;
 	state.prestigeCount = count;
 	state.thresholdsClaimed = claimed;
+	state.buyAmount = buyAmount;
 	state.activeTab = 'perks';
 	const recruits = perkAmount(state, 'startingRecruits', 0);
 	if (recruits > 0) state.units.recruit += recruits;
@@ -587,6 +694,26 @@ export function resetSkills() {
 	for (const def of SKILLS) {
 		state.skills[def.id] = 0;
 	}
+}
+
+export function addKills(amount) {
+	const n = Number(amount);
+	if (n > 0) state.kills += n;
+}
+
+export function addSupplies(amount) {
+	const n = Number(amount);
+	if (n > 0) state.supplies += n;
+}
+
+export function addSkillPoints(amount) {
+	const n = Number(amount);
+	if (n > 0) state.bonusSkillPoints += n;
+}
+
+export function addPerkPoints(amount) {
+	const n = Number(amount);
+	if (n > 0) state.perkPoints += n;
 }
 
 export function setTab(tab) {
@@ -689,6 +816,7 @@ export const serialize = (s = state) => JSON.stringify({
 	buildingProgress: s.buildingProgress,
 	perks: s.perks,
 	perkPoints: s.perkPoints,
+	bonusSkillPoints: s.bonusSkillPoints,
 	prestigeCount: s.prestigeCount,
 	thresholdsClaimed: s.thresholdsClaimed,
 });
@@ -785,9 +913,9 @@ export function deserialize(json, s = state) {
 	for (const def of PERKS) {
 		fresh.perks[def.id] = save.perks?.[def.id] === true;
 	}
-	// Points ever granted are 2^claimed - 1. Clamp a bad save; owned perks are left alone.
-	const pointsEarned = thresholdPoints(fresh.thresholdsClaimed) - 1;
-	fresh.perkPoints = Math.min(pointsEarned, Math.max(0, Math.floor(Number(save.perkPoints) || 0)));
+	// Debug grants can exceed the points a prestige would have paid.
+	fresh.perkPoints = Math.max(0, Number(save.perkPoints) || 0);
+	fresh.bonusSkillPoints = Math.max(0, Number(save.bonusSkillPoints) || 0);
 	const savedLevel = save.map?.activeLevel;
 	if (levelDef[savedLevel] && levelAvailable(savedLevel, fresh)) {
 		fresh.map.activeLevel = savedLevel;
@@ -812,6 +940,7 @@ export function deserialize(json, s = state) {
 
 	Object.assign(s, fresh, {
 		activeTab: s.activeTab,
+		buyAmount: s.buyAmount,
 		attacks: s.attacks,
 		lastAttack: s.lastAttack,
 		levelStarts: s.levelStarts,

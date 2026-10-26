@@ -1,6 +1,7 @@
 import {
 	state, attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment,
-	buySkill, resetSkills, resetGame, clickHvt, setTab, buyPerk, prestige,
+	buySkill, resetSkills, resetGame, clickHvt, setTab, buyPerk, prestige, setBuyAmount,
+	addKills, addSupplies, addSkillPoints, addPerkPoints,
 	selectLevel, startBoss, tick, updateReveals, serialize, deserialize,
 } from './game.js';
 import { App, loadNotation } from './ui.js';
@@ -45,7 +46,7 @@ function render() {
 	app.update(state, { hasSave: hasSave() });
 }
 
-const appActions = withRender({ attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment, buySkill, resetSkills, buyPerk, prestige, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
+const appActions = withRender({ attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment, buySkill, resetSkills, buyPerk, prestige, setBuyAmount, addKills, addSupplies, addSkillPoints, addPerkPoints, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
 app = App({ ...appActions, render });
 document.getElementById('app').append(app.el);
 

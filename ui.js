@@ -1,10 +1,10 @@
 import { UNITS, BUILDINGS, ATTACHMENTS, WEAPON_SLOTS, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION, BOSS_POWER_FUZZ, BOSS_RETREAT_PENALTY, PERKS, thresholdPoints } from './data.js';
 import {
-	stats, unitCost, attachmentCost, crewNeeded, unitKps, unitSps, displayKps, hvtReward, attackCooldown,
+	stats, attachmentCost, crewNeeded, unitKps, unitSps, displayKps, hvtReward, attackCooldown,
 	magazineRounds, reloadSeconds, finishReload, unseenAttachments, noticeAttachments,
-	canBuyUnit, canBuyAttachment, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
+	canBuyAttachment, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
 	levelDef, levelAvailable, levelBeat, canFightBoss, playerPower, bossPower, repeatClearSupplies, supplyPerSecond,
-	buildingCost, buildingRevealed, canBuyBuilding, buildingRate,
+	buildingRevealed, canBuyBuilding, buildingRate, quoteUnit, quoteBuilding,
 	perkTabBadge, canPrestige, canBuyPerk, autoAttack, nextPerkCost, pendingPrestigePoints, nextPrestigeKills,
 } from './game.js';
 
@@ -519,14 +519,14 @@ function UnitCard(def, actions) {
 	return {
 		el,
 		update(s) {
+			const quote = quoteUnit(def, s);
+			const batch = s.buyAmount === 'max' ? Math.max(quote.count, 1) : s.buyAmount;
 			el.hidden = !s.revealed.units[def.id];
-			button.disabled = !canBuyUnit(def, s);
-			setText(cost, formatCount(unitCost(def, s)));
+			button.disabled = quote.count < 1;
+			setText(cost, batchCost(quote, s.buyAmount));
 			setText(have, formatCount(s.units[def.id]));
 			setText(rate, def.sps ? formatNumber(unitSps(def, s)) : unitKpsLabel(def, s));
-			if (def.needs) {
-				setText(crewAmount, crewNeeded(def, s));
-			}
+			if (def.needs) setText(crewAmount, formatCount(crewNeeded(def, s) * batch));
 		},
 	};
 }
@@ -597,9 +597,10 @@ function BuildingCard(def, actions) {
 	return {
 		el,
 		update(s) {
+			const quote = quoteBuilding(def, s);
 			el.hidden = !buildingRevealed(def, s);
-			button.disabled = !canBuyBuilding(def, s);
-			setText(cost, formatCount(buildingCost(def, s)));
+			button.disabled = !buildingRevealed(def, s) || quote.count < 1;
+			setText(cost, batchCost(quote, s.buyAmount));
 			setText(owned, formatCount(s.buildings[def.id]));
 			const unitsPerSecond = buildingRate(def, s);
 			setText(rate, productionLabel(def, unitsPerSecond));
@@ -1026,6 +1027,70 @@ function Tab(id, name, actions, countAvailable = () => 0) {
 
 const availableAttachments = (s) => ATTACHMENTS.filter((def) => canBuyAttachment(def, s)).length;
 const bossesReady = (s) => LEVELS.filter((def) => canFightBoss(def.id, s)).length;
+
+const DEBUG_GRANTS = [
+	[100, '+100'],
+	[1e3, '+1K'],
+	[1e6, '+1M'],
+	[1e9, '+1B'],
+	[1e12, '+1T'],
+	[1e15, '+1Qa'],
+	[1e18, '+1Qi'],
+	[1e21, '+1Sx'],
+	[1e24, '+1Sp'],
+	[1e27, '+1Oc'],
+	[1e30, '+1No'],
+	[1e33, '+1Dc'],
+];
+
+function DebugPanel(actions) {
+	const group = (title, grant) => h('div', { className: 'debug-group' },
+		h('div', { className: 'debug-label' }, title),
+		h('div', { className: 'debug-buttons' }, DEBUG_GRANTS.map(([amount, label]) => h('button', {
+			type: 'button',
+			onClick: () => grant(amount),
+		}, label))),
+	);
+	return h('aside', { className: 'debug-panel' },
+		h('div', { className: 'debug-title' }, 'Debug'),
+		group('Kills', actions.addKills),
+		group('Supplies', actions.addSupplies),
+		group('Skill points', actions.addSkillPoints),
+		group('Perk points', actions.addPerkPoints),
+	);
+}
+
+const batchCost = (quote, amount) => {
+	const shown = amount === 'max' ? quote.count : amount;
+	if (shown > 1) return `${formatCount(shown)} for ${formatCount(quote.cost)}`;
+	return formatCount(quote.cost);
+};
+
+function BuyAmount(actions) {
+	const options = [[1, '1x'], [5, '5x'], [100, '100x'], ['max', 'Max']];
+	const buttons = options.map(([amount, label]) => ({
+		amount,
+		el: h('button', {
+			type: 'button',
+			className: 'buy-amount',
+			onClick: () => actions.setBuyAmount(amount),
+		}, label),
+	}));
+	const el = h('div', { className: 'buy-amount-bar' },
+		h('span', { className: 'buy-amount-label' }, 'Buy'),
+		...buttons.map((button) => button.el),
+	);
+	return {
+		el,
+		update(s) {
+			el.hidden = s.activeTab !== 'units' && s.activeTab !== 'buildings';
+			for (const button of buttons) {
+				button.el.classList.toggle('buy-amount-active', s.buyAmount === button.amount);
+			}
+		},
+	};
+}
+
 export function App(actions) {
 	const header = Header(actions);
 	const units = UnitsPanel(actions);
@@ -1034,6 +1099,7 @@ export function App(actions) {
 	const skills = SkillsPanel(actions);
 	const map = MapPanel(actions);
 	const perks = PerksPanel(actions);
+	const buyAmount = BuyAmount(actions);
 	const tabs = [
 		Tab('units', 'Units', actions),
 		Tab('buildings', 'Buildings', actions, availableBuildings),
@@ -1044,10 +1110,14 @@ export function App(actions) {
 	];
 
 	const el = h('div', { className: 'mainwrap' },
+		DebugPanel(actions),
 		h('div', { className: 'maincontent' },
 			header.el,
 			h('div', { className: 'bottomcontent' },
-				h('div', { className: 'tab-bar' }, tabs.map((tab) => tab.el)),
+				h('div', { className: 'tab-bar' },
+					h('div', { className: 'tab-row' }, tabs.map((tab) => tab.el)),
+					buyAmount.el,
+				),
 				units.el,
 				buildings.el,
 				weapon.el,
@@ -1064,6 +1134,7 @@ export function App(actions) {
 		update(s, env) {
 			header.update(s, env);
 			tabs.forEach((tab) => tab.update(s));
+			buyAmount.update(s);
 			units.update(s);
 			buildings.update(s);
 			weapon.update(s);

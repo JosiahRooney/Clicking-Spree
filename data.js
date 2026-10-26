@@ -1,4 +1,4 @@
-export const VERSION = '1.11';
+export const VERSION = '1.12';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.

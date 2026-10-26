@@ -92,10 +92,47 @@ body {
 	position: sticky;
 	top: 350px;
 	z-index: 1;
-	display: flex;
-	gap: 4px;
 	padding-top: 15px;
 	background-color: #333;
+}
+
+.tab-row {
+	display: flex;
+	gap: 4px;
+}
+
+.buy-amount-bar {
+	display: flex;
+	align-items: center;
+	padding: 8px 0 2px;
+}
+
+.buy-amount-bar[hidden] {
+	display: none;
+}
+
+.buy-amount-label {
+	color: #ddd;
+	font-size: 0.85em;
+	margin-right: 8px;
+}
+
+.buy-amount {
+	padding: 1px 8px;
+	font-size: 0.8em;
+	line-height: 1.4;
+	background-color: #F4F4F4;
+	border: 1px solid #8F8F8F;
+}
+
+.buy-amount + .buy-amount {
+	margin-left: -1px;
+}
+
+.buy-amount-active {
+	background-color: #333;
+	color: white;
+	font-weight: bold;
 }
 
 .unitsh3,
@@ -974,6 +1011,48 @@ button:disabled {
 .prestige-progress {
 	margin-top: 4px;
 	font-size: 0.9em;
+}
+
+.debug-panel {
+	position: fixed;
+	top: 12px;
+	left: max(8px, calc(50% - 425px - 248px));
+	z-index: 5;
+	width: 236px;
+	padding: 10px;
+	background-color: #1c1c1c;
+	color: #eee;
+	border: 1px solid #555;
+	font-size: 0.8em;
+}
+
+.debug-title {
+	margin-bottom: 8px;
+	font-weight: bold;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.debug-group {
+	margin-top: 8px;
+}
+
+.debug-label {
+	margin-bottom: 4px;
+	color: #bbb;
+}
+
+.debug-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.debug-buttons button {
+	padding: 3px 6px;
+	background-color: #333;
+	color: #fff;
+	border: 1px solid #666;
 }
 
 .topcontent {
