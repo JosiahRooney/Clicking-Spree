@@ -1,12 +1,13 @@
 import {
-	UNITS, UPGRADES, SKILLS, TIER_REQUIREMENTS, XP_BASE, XP_GROWTH,
-	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, CAS_KILLS, CAS_INTERVAL, HVT, LEVELS,
-	POWER_CLICKS_PER_SECOND, BOSS_RETREAT_PENALTY, REPEAT_CLEAR_SHARE,
+	UNITS, ATTACHMENTS, WEAPON_SLOTS, SKILLS, TIER_REQUIREMENTS, XP_BASE, XP_GROWTH,
+	BASE_CRIT_MULTIPLIER, TICK_CRIT_MULTIPLIER, BASE_CAS_CHANCE, HVT, LEVELS,
+	BASE_ATTACK_COOLDOWN, BASE_MAG_ROUNDS, BASE_RELOAD_SECONDS, BOSS_RETREAT_PENALTY, REPEAT_CLEAR_SHARE,
 	BUILDINGS, BUILDING_COST_GROWTH, BUILDING_SPEEDUP,
 } from './data.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
-const upgradeDef = Object.fromEntries(UPGRADES.map((def) => [def.id, def]));
+const attachmentDef = Object.fromEntries(ATTACHMENTS.map((def) => [def.id, def]));
+const starterForSlot = Object.fromEntries(ATTACHMENTS.filter((def) => def.starter).map((def) => [def.slot, def.id]));
 const skillDef = Object.fromEntries(SKILLS.map((def) => [def.id, def]));
 const buildingDef = Object.fromEntries(BUILDINGS.map((def) => [def.id, def]));
 export const levelDef = Object.fromEntries(LEVELS.map((def) => [def.id, def]));
@@ -32,14 +33,25 @@ const freshState = () => ({
 	buildings: Object.fromEntries(BUILDINGS.map((def) => [def.id, 0])),
 	// Fraction of the next unit each building type has produced (always below 1).
 	buildingProgress: Object.fromEntries(BUILDINGS.map((def) => [def.id, 0])),
-	upgrades: Object.fromEntries(UPGRADES.map((def) => [def.id, false])),
+	// owned: paid for and kept forever. equipped: one id per slot. Barrel, magazine, sight, and stock start with a plain part.
+	weapon: {
+		owned: Object.fromEntries(ATTACHMENTS.map((def) => [def.id, Boolean(def.starter)])),
+		equipped: Object.fromEntries(WEAPON_SLOTS.map((slot) => [slot.id, starterForSlot[slot.id] ?? null])),
+		// Unlocked attachments the player has already looked at. The rest badge their slot.
+		seen: Object.fromEntries(ATTACHMENTS.map((def) => [def.id, Boolean(def.starter)])),
+	},
 	skills: Object.fromEntries(SKILLS.map((def) => [def.id, 0])),
 	revealed: {
 		units: Object.fromEntries(UNITS.map((def) => [def.id, false])),
-		upgrades: Object.fromEntries(UPGRADES.map((def) => [def.id, false])),
+		attachments: Object.fromEntries(ATTACHMENTS.map((def) => [def.id, Boolean(def.starter)])),
 	},
 	// Countdowns in seconds. nextIn is null until the next target has been scheduled.
 	hvt: { nextIn: null, activeFor: 0 },
+	// Rounds left in the magazine. A reload refills it to the current capacity.
+	ammo: BASE_MAG_ROUNDS,
+	// Not saved: earliest time the Attack button can fire again, and when a reload finishes.
+	nextAttackAt: 0,
+	reloadUntil: 0,
 	// Not saved: lets the UI notice a new critical hit.
 	attacks: 0,
 	lastAttack: { amount: 0, crit: false },
@@ -109,22 +121,26 @@ const effectTotal = (s, type, group) => matchingSkills(s, type, group)
 const discountFactor = (s, type, group) => matchingSkills(s, type, group)
 	.reduce((factor, def) => factor * (1 - def.effect.amount * s.skills[def.id]), 1);
 
+const equippedAttachments = (s) => WEAPON_SLOTS
+	.map((slot) => attachmentDef[s.weapon.equipped[slot.id]])
+	.filter(Boolean);
+
+const effectSum = (s, type) => equippedAttachments(s)
+	.filter((def) => def.effect.type === type)
+	.reduce((sum, def) => sum + def.effect.amount, 0);
+
 export const stats = (s = state) => ({
-	// Upgrades
-	clickBonus: s.upgrades.m203 ? 1.20 : s.upgrades.redDot ? 1.05 : 1,
-	betterRecruits: s.upgrades.drillInstructors,
-	marksmanKps: s.upgrades.emr ? 8.25 : 5,
-	closeAirSupport: s.upgrades.closeAirSupport,
-	doubleTap: s.upgrades.doubleTap,
+	// Weapon. clickBonus starts at 1 kill per click; attachments add to it.
+	clickBonus: 1 + effectSum(s, 'click'),
 
 	// Assault
 	clickMultiplier: 1 + effectTotal(s, 'clickBonus'),
 	kpsMultiplier: (def) => 1 + effectTotal(s, 'kpsBonus') + effectTotal(s, 'groupKpsBonus', def.group),
-	clickKpsShare: (s.upgrades.doubleTap ? 0.03 : 0) + effectTotal(s, 'clickKpsShare'),
+	clickKpsShare: effectTotal(s, 'clickKpsShare'),
 	allKillsMultiplier: 1 + effectTotal(s, 'allKillsBonus'),
 
-	// Intel
-	critChance: effectTotal(s, 'critChance'),
+	// Intel. Accessory and sight crit is added on top of skill crit.
+	critChance: effectTotal(s, 'critChance') + effectSum(s, 'crit'),
 	critMultiplier: BASE_CRIT_MULTIPLIER + effectTotal(s, 'critMultiplier'),
 	recruitRolls: 1 + effectTotal(s, 'recruitRolls'),
 	casChance: BASE_CAS_CHANCE + effectTotal(s, 'casChance'),
@@ -147,14 +163,37 @@ export const unitCost = (def, s = state) => {
 	return Math.floor(def.baseCost * unitCostMultiplier(def) * costGrowth ** s.bought[def.id]);
 };
 
-export const upgradeCost = (def, s = state) => Math.floor(def.cost * stats(s).upgradeCostMultiplier);
+export const attachmentCost = (def, s = state) => Math.floor(def.cost * stats(s).upgradeCostMultiplier);
 
 export const crewNeeded = (def, s = state) => (def.needs ? Math.max(1, def.needs.amount - stats(s).crewReduction) : 0);
 
 // Kills per second for one unit, before the all-kills bonus.
-export const unitKps = (def, s = state) => {
-	const base = def.id === 'marksman' ? stats(s).marksmanKps : def.kps;
-	return base * stats(s).kpsMultiplier(def);
+export const unitKps = (def, s = state) => def.kps * stats(s).kpsMultiplier(def);
+
+// Seconds between attacks. Barrel attachments multiply this (lower is faster).
+export const attackCooldown = (s = state) => BASE_ATTACK_COOLDOWN * equippedAttachments(s)
+	.filter((def) => def.effect.type === 'speed')
+	.reduce((factor, def) => factor * def.effect.amount, 1);
+
+const equippedMagazine = (s) => equippedAttachments(s).find((def) => def.effect.type === 'magazine');
+
+export const magazineRounds = (s = state) => equippedMagazine(s)?.effect.rounds ?? BASE_MAG_ROUNDS;
+
+export const reloadSeconds = (s = state) => BASE_RELOAD_SECONDS * (equippedMagazine(s)?.effect.reload ?? 1);
+
+// A finished reload refills the mag. Called from the attack loop and the UI timer.
+export function finishReload(s = state) {
+	if (s.ammo <= 0 && s.reloadUntil > 0 && Date.now() >= s.reloadUntil) {
+		s.ammo = magazineRounds(s);
+		s.reloadUntil = 0;
+	}
+}
+
+// A larger magazine fills immediately. A smaller one drops extra rounds. A reload in progress is left alone.
+const syncAmmo = (previousCapacity, s = state) => {
+	if (s.reloadUntil > Date.now()) return;
+	const capacity = magazineRounds(s);
+	s.ammo = capacity > previousCapacity ? capacity : Math.min(s.ammo, capacity);
 };
 
 // Supplies per second from one unit. Combat units have no sps, so they add nothing.
@@ -167,25 +206,28 @@ export const displayKps = (s = state) => s.kps * stats(s).allKillsMultiplier;
 
 // The average of each recruit's best roll, so power doesn't jump around with the dice.
 const expectedRecruitRoll = (s) => {
-	const { betterRecruits, recruitRolls: rolls } = stats(s);
-	return betterRecruits ? 1 + (1 - (1 / 3) ** rolls) + (1 - (2 / 3) ** rolls) : rolls / (rolls + 1);
+	const { recruitRolls: rolls } = stats(s);
+	return rolls / (rolls + 1);
 };
 
 const expectedKps = (s) => UNITS.reduce((sum, def) => sum
 	+ s.units[def.id] * (def.id === 'recruit' ? expectedRecruitRoll(s) * stats(s).kpsMultiplier(def) : unitKps(def, s)), 0);
 
-// Expected kills per second in a fight: troops, Close Air Support, and steady clicking, crits included.
+// Expected kills per second in a fight: troops and clicking at the rifle's real fire rate, crits included.
 // Directly comparable to bossPower: at least equal power should win in time.
 export const playerPower = (s = state) => {
 	const {
 		clickBonus, clickMultiplier, clickKpsShare, critChance, critMultiplier,
-		tickCritChance, closeAirSupport, casChance, allKillsMultiplier,
+		tickCritChance, allKillsMultiplier,
 	} = stats(s);
 	const kps = expectedKps(s);
 	const troops = kps * (1 + tickCritChance * (TICK_CRIT_MULTIPLIER - 1));
 	const click = (clickBonus * clickMultiplier + kps * clickKpsShare) * (1 + critChance * (critMultiplier - 1));
-	const airSupport = closeAirSupport ? (Math.min(1, casChance) * CAS_KILLS) / CAS_INTERVAL : 0;
-	return (troops + click * POWER_CLICKS_PER_SECOND + airSupport) * allKillsMultiplier;
+	const cooldown = attackCooldown(s);
+	const rounds = magazineRounds(s);
+	// Sustained fire rate, with the reload pause counted in.
+	const shotsPerSecond = rounds / (rounds * cooldown + reloadSeconds(s));
+	return (troops + click * shotsPerSecond) * allKillsMultiplier;
 };
 
 export const bossPower = (def) => def.boss.hp / def.boss.seconds;
@@ -200,11 +242,9 @@ export const canBuyUnit = (def, s = state) => {
 	return s.kills >= unitCost(def, s) && hasCrew;
 };
 
-export const canBuyUpgrade = (def, s = state) => {
-	const index = UPGRADES.indexOf(def);
-	const previousBought = index === 0 || s.upgrades[UPGRADES[index - 1].id];
-	return !s.upgrades[def.id] && previousBought && s.kills >= upgradeCost(def, s);
-};
+export const canBuyAttachment = (def, s = state) => s.revealed.attachments[def.id]
+	&& !s.weapon.owned[def.id]
+	&& s.kills >= attachmentCost(def, s);
 
 export const levelAvailable = (id, s = state) => {
 	const index = LEVELS.findIndex((def) => def.id === id);
@@ -342,11 +382,25 @@ function updateBoss() {
 }
 
 export function attack() {
+	const now = Date.now();
+	if (now < state.nextAttackAt || now < state.reloadUntil) {
+		return;
+	}
+	finishReload();
+	if (state.ammo <= 0) {
+		state.reloadUntil = now + reloadSeconds() * 1000;
+		return;
+	}
 	const { clickBonus, clickMultiplier, clickKpsShare, critChance, critMultiplier } = stats();
 	const amount = clickBonus * clickMultiplier + state.kps * clickKpsShare;
 	const crit = critChance > 0 && Math.random() < critChance;
 	state.attacks += 1;
+	state.ammo -= 1;
 	state.lastAttack = { amount: earn(crit ? amount * critMultiplier : amount), crit };
+	state.nextAttackAt = now + attackCooldown() * 1000;
+	if (state.ammo <= 0) {
+		state.reloadUntil = now + reloadSeconds() * 1000;
+	}
 }
 
 export function buyUnit(id) {
@@ -383,13 +437,44 @@ function produceUnits() {
 	}
 }
 
-export function buyUpgrade(id) {
-	const def = upgradeDef[id];
-	if (!canBuyUpgrade(def)) {
+export function buyAttachment(id) {
+	const def = attachmentDef[id];
+	if (!def || def.starter || !canBuyAttachment(def)) {
 		return;
 	}
-	state.kills -= upgradeCost(def);
-	state.upgrades[id] = true;
+	state.kills -= attachmentCost(def);
+	state.weapon.owned[id] = true;
+	equipAttachment(id);
+}
+
+export function equipAttachment(id) {
+	const def = attachmentDef[id];
+	if (def && state.weapon.owned[id]) {
+		const previous = magazineRounds();
+		state.weapon.equipped[def.slot] = id;
+		syncAmmo(previous);
+	}
+}
+
+// Revealed attachments in this slot that the player has not opened yet.
+export const unseenAttachments = (slot, s = state) => ATTACHMENTS.filter((def) => def.slot === slot
+	&& !def.starter
+	&& s.revealed.attachments[def.id]
+	&& !s.weapon.owned[def.id]
+	&& !s.weapon.seen[def.id]).length;
+
+export function noticeAttachments(slot, s = state) {
+	for (const def of ATTACHMENTS) {
+		if (def.slot === slot && s.revealed.attachments[def.id]) s.weapon.seen[def.id] = true;
+	}
+}
+
+export function clearAttachment(slot) {
+	if (slot in state.weapon.equipped) {
+		const previous = magazineRounds();
+		state.weapon.equipped[slot] = starterForSlot[slot] ?? null;
+		syncAmmo(previous);
+	}
 }
 
 export function buySkill(id) {
@@ -414,15 +499,13 @@ export function setTab(tab) {
 }
 
 // Each recruit rolls separately (0 - 1, or 1 - 3 with Better Drill Instructors) and keeps its best roll.
-const rollRecruit = (betterRecruits) => (betterRecruits ? Math.floor(Math.random() * 3) + 1 : Math.random());
-
 const rollRecruitKills = () => {
-	const { betterRecruits, recruitRolls } = stats();
+	const { recruitRolls } = stats();
 	let total = 0;
 	for (let i = 0; i < state.units.recruit; i++) {
 		let best = 0;
 		for (let roll = 0; roll < recruitRolls; roll++) {
-			best = Math.max(best, rollRecruit(betterRecruits));
+			best = Math.max(best, Math.random());
 		}
 		total += best;
 	}
@@ -451,6 +534,7 @@ function updateHvt() {
 }
 
 export function tick() {
+	finishReload();
 	produceUnits();
 	// Logistics trucks pay supplies directly. This is not a kill, so it skips earn().
 	state.supplies += supplyPerSecond();
@@ -464,13 +548,6 @@ export function tick() {
 	updateHvt();
 	// After earn(), so the last second of KPS lands before time runs out.
 	updateBoss();
-}
-
-export function closeAirSupportTick() {
-	const { closeAirSupport, casChance } = stats();
-	if (closeAirSupport && Math.random() < casChance) {
-		earn(CAS_KILLS);
-	}
 }
 
 export function clickHvt() {
@@ -489,9 +566,9 @@ export function updateReveals(s = state) {
 			s.revealed.units[def.id] = true;
 		}
 	}
-	for (const def of UPGRADES) {
-		if (def.reveal === 0 || s.kills > def.reveal || s.upgrades[def.id]) {
-			s.revealed.upgrades[def.id] = true;
+	for (const def of ATTACHMENTS) {
+		if (def.reveal === 0 || s.kills > def.reveal || s.weapon.owned[def.id]) {
+			s.revealed.attachments[def.id] = true;
 		}
 	}
 }
@@ -505,7 +582,8 @@ export const serialize = (s = state) => JSON.stringify({
 	xp: s.xp,
 	units: s.units,
 	bought: s.bought,
-	upgrades: s.upgrades,
+	weapon: s.weapon,
+	ammo: s.ammo,
 	skills: s.skills,
 	revealed: s.revealed,
 	hvt: s.hvt,
@@ -531,7 +609,8 @@ export function deserialize(json, s = state) {
 		return false;
 	}
 
-	const savedUpgrade = (def, index) => (Array.isArray(save.upgrades) ? save.upgrades[index] : save.upgrades?.[def.id]) === true;
+	// Old upgrades were a boolean chain. Index 0 was Red Dot, index 1 was the M203.
+	const legacyUpgrade = (id, index) => (Array.isArray(save.upgrades) ? save.upgrades[index] : save.upgrades?.[id]) === true;
 	const fresh = freshState();
 
 	fresh.kills = Number(save.kills) || 0;
@@ -543,10 +622,32 @@ export function deserialize(json, s = state) {
 		fresh.bought[def.id] = hasBought ? Math.max(0, Math.floor(Number(save.bought[def.id]) || 0)) : fresh.units[def.id];
 		fresh.revealed.units[def.id] = save.revealed?.units?.[def.id] === true;
 	}
-	UPGRADES.forEach((def, index) => {
-		fresh.upgrades[def.id] = savedUpgrade(def, index);
-		fresh.revealed.upgrades[def.id] = save.revealed?.upgrades?.[def.id] === true;
-	});
+	if (save.weapon && typeof save.weapon === 'object') {
+		for (const def of ATTACHMENTS) {
+			fresh.weapon.owned[def.id] = save.weapon.owned?.[def.id] === true;
+			fresh.revealed.attachments[def.id] = save.revealed?.attachments?.[def.id] === true;
+		}
+		for (const slot of WEAPON_SLOTS) {
+			const id = save.weapon.equipped?.[slot.id];
+			const def = attachmentDef[id];
+			fresh.weapon.equipped[slot.id] = def && def.slot === slot.id && fresh.weapon.owned[def.id] ? def.id : null;
+		}
+	} else {
+		if (legacyUpgrade('redDot', 0)) {
+			fresh.weapon.owned.redDot = true;
+			fresh.weapon.equipped.sight = 'redDot';
+		}
+		if (legacyUpgrade('m203', 1)) {
+			fresh.weapon.owned.grenadeLauncher = true;
+			fresh.weapon.equipped.underbarrel = 'grenadeLauncher';
+		}
+	}
+	for (const def of ATTACHMENTS) {
+		if (!def.starter) continue;
+		fresh.weapon.owned[def.id] = true;
+		fresh.revealed.attachments[def.id] = true;
+		if (!fresh.weapon.equipped[def.slot]) fresh.weapon.equipped[def.slot] = def.id;
+	}
 	for (const def of SKILLS) {
 		fresh.skills[def.id] = clampRank(save.skills?.[def.id], def);
 	}
@@ -581,6 +682,22 @@ export function deserialize(json, s = state) {
 		fresh.map.activeLevel = savedLevel;
 	}
 	updateReveals(fresh);
+	// Saves from before slots were badged already showed every unlocked attachment.
+	const hasSeen = save.weapon?.seen && typeof save.weapon.seen === 'object';
+	for (const def of ATTACHMENTS) {
+		if (def.starter || fresh.weapon.owned[def.id]) {
+			fresh.weapon.seen[def.id] = true;
+		} else if (hasSeen) {
+			fresh.weapon.seen[def.id] = save.weapon.seen[def.id] === true;
+		} else {
+			fresh.weapon.seen[def.id] = fresh.revealed.attachments[def.id] === true;
+		}
+	}
+	const capacity = magazineRounds(fresh);
+	const savedAmmo = Number(save.ammo);
+	fresh.ammo = Number.isFinite(savedAmmo) ? Math.min(capacity, Math.max(0, Math.floor(savedAmmo))) : capacity;
+	// A reload in progress is not saved, so an empty mag comes back full.
+	if (fresh.ammo === 0) fresh.ammo = capacity;
 
 	Object.assign(s, fresh, {
 		activeTab: s.activeTab,

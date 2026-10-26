@@ -34,6 +34,10 @@ body {
 }
 
 .clicker {
+    position: relative;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
     font-size: 2.2em;
     height: 84px;
     padding: 15px;
@@ -44,6 +48,32 @@ body {
     border-radius: 3px;
     box-shadow: 0 5px 15px #636363;
     transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+}
+
+.attack-label,
+.attack-ammo {
+	position: relative;
+	z-index: 1;
+}
+
+.attack-ammo {
+	display: block;
+	font-size: 0.4em;
+	line-height: 1.2;
+}
+
+.attack-cooldown {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 0;
+	background-color: rgba(0, 0, 0, 0.18);
+	pointer-events: none;
+}
+
+.clicker-reloading .attack-cooldown {
+	background-color: rgba(30, 70, 130, 0.45);
 }
 
 .clicker:active {
@@ -68,7 +98,7 @@ body {
 
 .unitsh3,
 .buildingsh3,
-.upgradesh3,
+.weaponh3,
 .skillsh3,
 .maph3 {
     border-bottom: none;
@@ -93,7 +123,7 @@ body {
 	text-shadow: 1px 1px 2px #3A2B1A;
 	font-weight: 100;
 }
-.upgradesh3 {
+.weaponh3 {
 	background-color: #85B342;
 	color: white;
 	text-shadow: 1px 1px 2px #154300;
@@ -154,15 +184,144 @@ body {
 	height: 100%;
 	width: 0;
 	background-color: #F5D76E;
-	transition: width 1s linear;
-}
-
-.building-next-fill.building-next-snap {
-	transition: none;
 }
 .upgrades {
 	background-color: #85B342;
 	padding-top: 15px;
+}
+
+.weapon {
+	background-color: #1c2420;
+	color: #e8e4d8;
+	padding: 15px;
+}
+
+.weapon-summary,
+.weapon-slot-title,
+.weapon-empty {
+	margin: 0 0 12px;
+}
+
+.weapon-slot-title {
+	margin-top: 16px;
+}
+
+.weapon-stage {
+	position: relative;
+	height: 360px;
+	margin: 8px 0 4px;
+	border: 1px solid #3d4a3a;
+	background-color: #141a16;
+}
+
+.weapon-rifle {
+	position: absolute;
+	left: 16%;
+	right: 16%;
+	top: 42%;
+}
+
+.weapon-rifle svg {
+	width: 100%;
+	height: 90px;
+	display: block;
+}
+
+.weapon-callout {
+	position: absolute;
+	width: 130px;
+	padding: 4px 8px;
+	text-align: left;
+	color: #e8e4d8;
+	background-color: rgba(20, 26, 22, 0.92);
+	border: 1px solid #6d7a62;
+	cursor: pointer;
+}
+
+.weapon-callout-slot {
+	display: block;
+	font-size: 0.7em;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: #c9d6a8;
+}
+
+.weapon-callout-name {
+	display: block;
+	font-size: 0.85em;
+}
+
+.weapon-callout-badge {
+	position: absolute;
+	top: -8px;
+	right: -8px;
+	min-width: 1.3em;
+	padding: 0 4px;
+	border-radius: 10px;
+	background-color: #C0392B;
+	color: white;
+	font-size: 0.75em;
+	font-weight: bold;
+	line-height: 1.4em;
+	text-align: center;
+}
+
+.weapon-callout-selected {
+	border-color: #d6c27a;
+	box-shadow: 0 0 0 1px #d6c27a;
+}
+
+.weapon-callout-muzzle { left: 2%; top: 38%; }
+.weapon-callout-barrel { left: 20%; top: 8%; }
+.weapon-callout-accessory { left: 40%; top: 8%; }
+.weapon-callout-sight { left: 62%; top: 8%; }
+.weapon-callout-underbarrel { left: 24%; top: 74%; }
+.weapon-callout-magazine { left: 48%; top: 74%; }
+.weapon-callout-stock { right: 2%; top: 38%; }
+
+.attachment-list {
+	margin: 0;
+	padding: 0;
+}
+
+.attachment-row {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 12px;
+	align-items: center;
+	list-style: none;
+	padding: 10px 0;
+	border-top: 1px solid #3d4a3a;
+}
+
+.attachment-row p {
+	margin: 4px 0 0;
+	color: #cfc8b8;
+}
+
+.attachment-bonus {
+	color: #d6c27a;
+}
+
+.attachment-equipped {
+	outline: 1px solid #d6c27a;
+	padding-left: 8px;
+	padding-right: 8px;
+}
+
+.attachment-actions {
+	text-align: right;
+}
+
+.attachment-actions button {
+	display: block;
+	margin-top: 6px;
+	margin-left: auto;
+}
+
+.weapon-empty {
+	list-style: none;
+	color: #cfc8b8;
 }
 
 .units ul li,
@@ -433,8 +592,19 @@ button:disabled {
 	color: #FFD54A;
 }
 
-.fight-button {
+.fight-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	margin-top: 10px;
+}
+
+.level-row .fight-row {
+	display: inline-flex;
+	margin-top: 0;
+}
+
+.fight-button {
 	padding: 8px 14px;
 	font-weight: bold;
 	color: white;
@@ -442,6 +612,20 @@ button:disabled {
 	border: 2px solid #600;
 	cursor: pointer;
 }
+
+.fight-odds {
+	font-size: 0.85em;
+	font-weight: bold;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.fight-odds.fight-deadly { color: #FF8A80; }
+.fight-odds.fight-unlikely { color: #FFAB91; }
+.fight-odds.fight-fair { color: #FFE082; }
+.fight-odds.fight-favorable { color: #C5E1A5; }
+.fight-odds.fight-rollover { color: #A5D6A7; }
 
 .boss-name {
 	margin-bottom: 8px;
@@ -594,7 +778,7 @@ button:disabled {
 
 .level-row {
 	display: grid;
-	grid-template-columns: 1fr 230px 190px;
+	grid-template-columns: 1fr 210px 250px;
 	gap: 12px;
 	align-items: center;
 	padding: 8px;

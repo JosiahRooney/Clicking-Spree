@@ -1,8 +1,8 @@
 import {
-	state, attack, buyUnit, buyBuilding, buyUpgrade, buySkill, resetSkills, resetGame, clickHvt, setTab,
-	selectLevel, startBoss, tick, closeAirSupportTick, updateReveals, serialize, deserialize,
+	state, attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment,
+	buySkill, resetSkills, resetGame, clickHvt, setTab,
+	selectLevel, startBoss, tick, updateReveals, serialize, deserialize,
 } from './game.js';
-import { CAS_INTERVAL } from './data.js';
 import { App, loadNotation } from './ui.js';
 
 const saveKey = 'clickingSpreeSave';
@@ -32,7 +32,7 @@ function load() {
 }
 
 function reset() {
-	if (!confirm('Reset the game? All kills, units, upgrades, XP, skills and map progress will be lost, including your save.')) {
+	if (!confirm('Reset the game? All kills, units, attachments, XP, skills and map progress will be lost, including your save.')) {
 		return;
 	}
 	resetGame();
@@ -45,7 +45,7 @@ function render() {
 	app.update(state, { hasSave: hasSave() });
 }
 
-const appActions = withRender({ attack, buyUnit, buyBuilding, buyUpgrade, buySkill, resetSkills, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
+const appActions = withRender({ attack, buyUnit, buyBuilding, buyAttachment, equipAttachment, clearAttachment, buySkill, resetSkills, clickHvt, setTab, selectLevel, startBoss, save, load, reset });
 app = App({ ...appActions, render });
 document.getElementById('app').append(app.el);
 
@@ -53,7 +53,6 @@ loadNotation();
 load();
 render();
 
-const timers = withRender({ tick, closeAirSupportTick });
+const timers = withRender({ tick });
 setInterval(timers.tick, 1000);
-setInterval(timers.closeAirSupportTick, CAS_INTERVAL * 1000);
 setInterval(writeSave, autosaveInterval);

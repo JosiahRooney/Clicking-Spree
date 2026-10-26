@@ -1,7 +1,8 @@
-import { UNITS, BUILDINGS, UPGRADES, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION, BOSS_POWER_FUZZ, BOSS_RETREAT_PENALTY } from './data.js';
+import { UNITS, BUILDINGS, ATTACHMENTS, WEAPON_SLOTS, SKILLS, SKILL_BRANCHES, ZONES, LEVELS, VERSION, BOSS_POWER_FUZZ, BOSS_RETREAT_PENALTY } from './data.js';
 import {
-	stats, unitCost, upgradeCost, crewNeeded, unitKps, unitSps, displayKps, hvtReward,
-	canBuyUnit, canBuyUpgrade, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
+	stats, unitCost, attachmentCost, crewNeeded, unitKps, unitSps, displayKps, hvtReward, attackCooldown,
+	magazineRounds, reloadSeconds, finishReload, unseenAttachments, noticeAttachments,
+	canBuyUnit, canBuyAttachment, canBuySkill, xpProgress, skillPoints, branchPoints, tierRequirement,
 	levelDef, levelAvailable, levelBeat, canFightBoss, playerPower, bossPower, repeatClearSupplies,
 	buildingCost, buildingRevealed, canBuyBuilding, buildingRate,
 } from './game.js';
@@ -106,6 +107,29 @@ const fuzzFactor = (id) => {
 
 const estimatedBossPower = (def) => bossPower(def) * fuzzFactor(def.id);
 
+// Five bands of win chance. The chance itself stays off the button.
+const FIGHT_ODDS = [
+	{ id: 'deadly', label: 'Deadly', max: 0.2 },
+	{ id: 'unlikely', label: 'Unlikely', max: 0.4 },
+	{ id: 'fair', label: 'Fair fight', max: 0.6 },
+	{ id: 'favorable', label: 'Favorable', max: 0.88 },
+	{ id: 'rollover', label: 'Roll over', max: 1 },
+];
+
+// Matching the boss is already a good bet. Well under is deadly, well over is a rollover.
+const fightOutlook = (player, boss) => {
+	const ratio = boss > 0 ? player / boss : Infinity;
+	const chance = 1 / (1 + Math.exp(-4 * (ratio - 0.8)));
+	return FIGHT_ODDS.find((tier) => chance < tier.max) ?? FIGHT_ODDS[FIGHT_ODDS.length - 1];
+};
+
+const showOutlook = (label, outlook) => {
+	setText(label, outlook.label);
+	for (const tier of FIGHT_ODDS) {
+		label.classList.toggle(`fight-${tier.id}`, tier.id === outlook.id);
+	}
+};
+
 function PowerCompare() {
 	const you = h('strong');
 	const boss = h('strong');
@@ -156,8 +180,10 @@ function LevelPanel(actions) {
 	const bar = h('progress', { className: 'level-progress' });
 	const count = h('div', { className: 'level-count' });
 	const status = h('div', { className: 'level-status' });
+	const fightOdds = h('span', { className: 'fight-odds' });
 	const fightButton = h('button', { type: 'button', className: 'fight-button', onClick: () => actions.startBoss(levelId) });
-	const progressBlock = h('div', {}, bar, count, status, fightButton);
+	const fightRow = h('div', { className: 'fight-row' }, fightButton, fightOdds);
+	const progressBlock = h('div', {}, bar, count, status, fightRow);
 
 	const bossName = h('span');
 	const timerFill = h('div', { className: 'boss-timer-fill' });
@@ -240,8 +266,9 @@ function LevelPanel(actions) {
 			bar.value = Math.min(s.map.progress[def.id], def.killsRequired);
 			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)} ${cleared ? 'kills toward the next clear' : 'lifetime kills earned here'}`);
 			setText(status, levelStatus(def, s));
-			fightButton.hidden = !canFightBoss(def.id, s);
+			fightRow.hidden = !canFightBoss(def.id, s);
 			setText(fightButton, `Fight Boss: ${def.boss.name}`);
+			showOutlook(fightOdds, fightOutlook(playerPower(s), estimatedBossPower(def)));
 
 			progressBlock.hidden = s.boss !== null;
 			bossBlock.hidden = s.boss === null;
@@ -293,6 +320,26 @@ function Header(actions) {
 	const loadButton = h('button', { type: 'button', onClick: actions.load }, 'Load');
 	const saveButton = h('button', { type: 'button', onClick: actions.save }, 'Save');
 	const resetButton = h('button', { type: 'button', className: 'reset-button', onClick: actions.reset }, 'Reset');
+	const cooldownFill = h('span', { className: 'attack-cooldown' });
+	const ammoLabel = h('span', { className: 'attack-ammo' });
+	const attackButton = h('button', { className: 'clicker', type: 'button' }, h('span', { className: 'attack-label' }, 'Attack'), ammoLabel, cooldownFill);
+	let holding = false;
+	let armedUntil = 0;
+	let cooldownTimer = null;
+	const releaseAttack = () => { holding = false; };
+	attackButton.addEventListener('pointerdown', (event) => {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		holding = true;
+		attackButton.setPointerCapture(event.pointerId);
+		actions.attack();
+	});
+	attackButton.addEventListener('pointerup', releaseAttack);
+	attackButton.addEventListener('pointercancel', releaseAttack);
+	attackButton.addEventListener('lostpointercapture', releaseAttack);
+	attackButton.addEventListener('keyup', (event) => {
+		if (event.key === ' ' || event.key === 'Enter') actions.attack();
+	});
 	const notationButtons = [
 		['sci', '1e3', 'Scientific notation'],
 		['suffix', '1K', 'Suffix notation'],
@@ -313,8 +360,8 @@ function Header(actions) {
 			loadButton, ' ', saveButton, ' ', resetButton,
 		),
 		levelPanel.el,
-		h('p', {}, 'Click the button to attack enemies and earn kills. Spend kills on troops and upgrades.'),
-		h('button', { className: 'clicker', type: 'button', onClick: actions.attack }, 'Attack'),
+		h('p', {}, 'Click or hold the button to attack. It fires until the magazine is empty, then reloads. Spend kills on troops and attachments.'),
+		attackButton,
 		h('div', { className: 'killz' },
 			'You have ', kills, ' kills.', h('br'),
 			'You have ', kps, ' kills per second (KPS).',
@@ -364,6 +411,36 @@ function Header(actions) {
 			setText(lifetime, formatCount(s.lifetimeKills));
 			setText(supplies, formatCount(s.supplies));
 			loadButton.disabled = !env.hasSave;
+			finishReload(s);
+			const readyAt = Math.max(s.nextAttackAt, s.reloadUntil);
+			const wait = Math.max(0, readyAt - Date.now());
+			const reloading = s.ammo <= 0 && s.reloadUntil > Date.now();
+			attackButton.classList.toggle('clicker-reloading', reloading);
+			setText(ammoLabel, reloading ? 'Reloading' : `${s.ammo}/${magazineRounds(s)}`);
+			if (wait === 0) {
+				clearTimeout(cooldownTimer);
+				cooldownTimer = null;
+				armedUntil = readyAt;
+				cooldownFill.style.transition = 'none';
+				cooldownFill.style.width = '0';
+			} else if (readyAt !== armedUntil || (holding && cooldownTimer === null)) {
+				if (readyAt !== armedUntil) {
+					armedUntil = readyAt;
+					const total = (reloading ? reloadSeconds(s) : attackCooldown(s)) * 1000;
+					cooldownFill.style.transition = 'none';
+					cooldownFill.style.width = `${Math.max(0, (1 - wait / total) * 100)}%`;
+					requestAnimationFrame(() => {
+						cooldownFill.style.transition = `width ${wait}ms linear`;
+						cooldownFill.style.width = '100%';
+					});
+				}
+				clearTimeout(cooldownTimer);
+				cooldownTimer = setTimeout(() => {
+					cooldownTimer = null;
+					if (holding) actions.attack();
+					else actions.render();
+				}, Math.max(0, readyAt - Date.now()));
+			}
 			notationButtons.forEach((button) => {
 				button.classList.toggle('notation-active', button.textContent === (notation === 'suffix' ? '1K' : '1e3'));
 			});
@@ -387,11 +464,10 @@ function Header(actions) {
 // ======== Units ========
 
 const unitKpsLabel = (def, s) => {
-	const { allKillsMultiplier, kpsMultiplier, betterRecruits } = stats(s);
+	const { allKillsMultiplier, kpsMultiplier } = stats(s);
 	if (def.id === 'recruit') {
 		const multiplier = kpsMultiplier(def) * allKillsMultiplier;
-		const [min, max] = betterRecruits ? [1, 3] : [0, 1];
-		return `${formatNumber(min * multiplier)} - ${formatNumber(max * multiplier)}`;
+		return `${formatNumber(0)} - ${formatNumber(multiplier)}`;
 	}
 	return formatNumber(unitKps(def, s) * allKillsMultiplier);
 };
@@ -492,7 +568,8 @@ function BuildingCard(def, actions) {
 		),
 	);
 
-	let lastProgress = 0;
+	let lastProgress = null;
+	let lastRate = null;
 
 	return {
 		el,
@@ -505,12 +582,25 @@ function BuildingCard(def, actions) {
 			setText(rate, productionLabel(def, unitsPerSecond));
 
 			// Past one unit per second production is continuous, so a "next unit" bar would only flicker.
-			nextBar.hidden = unitsPerSecond === 0 || unitsPerSecond >= 1;
 			const progress = s.buildingProgress[def.id];
-			// Snap (no transition) when a unit pops out and the bar wraps back toward empty.
-			nextFill.classList.toggle('building-next-snap', progress < lastProgress);
-			nextFill.style.width = `${progress * 100}%`;
+			nextBar.hidden = unitsPerSecond === 0 || unitsPerSecond >= 1;
+			if (nextBar.hidden || (progress === lastProgress && unitsPerSecond === lastRate)) {
+				lastProgress = progress;
+				lastRate = unitsPerSecond;
+				return;
+			}
+			// Progress is where this second started. Animate across the second, up to a full unit.
+			// Landing on the stored value instead left the bar a step short, then jumped to the leftover.
+			const wrapped = lastProgress !== null && progress < lastProgress;
+			if (wrapped || lastRate !== unitsPerSecond) {
+				nextFill.style.transition = 'none';
+				nextFill.style.width = `${progress * 100}%`;
+				void nextFill.offsetWidth;
+			}
+			nextFill.style.transition = 'width 1s linear';
+			nextFill.style.width = `${Math.min(1, progress + unitsPerSecond) * 100}%`;
 			lastProgress = progress;
+			lastRate = unitsPerSecond;
 		},
 	};
 }
@@ -541,48 +631,115 @@ function BuildingsPanel(actions) {
 
 
 
-// ======== Upgrades ========
+// ======== Weapon ========
 
-function UpgradeCard(def, actions) {
-	const button = h('button', { type: 'button', onClick: () => actions.buyUpgrade(def.id) }, def.name);
+const attachmentBonus = (def) => {
+	if (def.starter) return 'No bonus';
+	if (def.effect.type === 'click') {
+		return `+${formatNumber(def.effect.amount)} kill per click`;
+	}
+	if (def.effect.type === 'crit') {
+		return `+${Math.round(def.effect.amount * 100)}% crit chance`;
+	}
+	if (def.effect.type === 'magazine') {
+		const faster = Math.round((1 - def.effect.reload) * 100);
+		return faster > 0 ? `${def.effect.rounds} rounds, ${faster}% faster reload` : `${def.effect.rounds} rounds`;
+	}
+	return `${Math.round((1 - def.effect.amount) * 100)}% faster attacks`;
+};
+
+const rifleGraphic = () => {
+	const el = h('div', { className: 'weapon-rifle' });
+	el.innerHTML = `<svg viewBox="0 0 460 110" aria-hidden="true">
+		<rect x="8" y="46" width="150" height="10" rx="2" fill="#3a3a3a"/>
+		<rect x="150" y="40" width="130" height="18" rx="2" fill="#2c2c2c"/>
+		<rect x="168" y="28" width="70" height="12" rx="2" fill="#242424"/>
+		<rect x="278" y="42" width="70" height="22" rx="2" fill="#1e1e1e"/>
+		<rect x="200" y="64" width="18" height="36" rx="2" fill="#333"/>
+		<path d="M348 44 h90 l14 16 v18 h-104z" fill="#3f3428"/>
+		<rect x="118" y="56" width="28" height="22" rx="2" fill="#6b5344"/>
+	</svg>`;
+	return el;
+};
+
+function AttachmentRow(def, actions) {
+	const buy = h('button', { type: 'button', onClick: () => actions.buyAttachment(def.id) }, 'Buy');
+	const equip = h('button', { type: 'button', onClick: () => actions.equipAttachment(def.id) }, 'Equip');
+	const remove = h('button', { type: 'button', onClick: () => actions.clearAttachment(def.slot) }, 'Remove');
 	const cost = h('span');
-	const details = h('div', {},
-		button,
-		h('p', { className: 'desc' }, def.description),
-		statsTable(['Cost:', cost, ' kills']),
-		h('p', {}, def.bonus.before, h('span', {}, def.bonus.value), def.bonus.after),
+	const price = h('span', { className: 'attachment-cost' }, cost, ' kills');
+	const el = h('li', { className: 'attachment-row' },
+		h('div', { className: 'attachment-info' },
+			h('strong', {}, def.name),
+			h('p', {}, def.description),
+			h('p', { className: 'attachment-bonus' }, attachmentBonus(def)),
+		),
+		h('div', { className: 'attachment-actions' }, price, buy, equip, remove),
 	);
-	const purchased = h('span', {}, def.purchasedMessage);
-	const el = h('li', {}, details, purchased);
 
 	return {
 		el,
-		update(s) {
-			const bought = s.upgrades[def.id];
-			el.hidden = !s.revealed.upgrades[def.id];
-			details.hidden = bought;
-			purchased.hidden = !bought;
-			button.disabled = !canBuyUpgrade(def, s);
-			setText(cost, formatCount(upgradeCost(def, s)));
+		update(s, selected) {
+			const owned = s.weapon.owned[def.id];
+			const equipped = s.weapon.equipped[def.slot] === def.id;
+			el.hidden = def.slot !== selected || !s.revealed.attachments[def.id];
+			el.classList.toggle('attachment-equipped', equipped);
+			buy.hidden = owned || def.starter;
+			equip.hidden = !owned || equipped;
+			remove.hidden = !equipped || def.starter;
+			price.hidden = owned || def.starter;
+			buy.disabled = !canBuyAttachment(def, s);
+			setText(cost, formatCount(attachmentCost(def, s)));
 		},
 	};
 }
 
-function UpgradesPanel(actions) {
-	const cards = UPGRADES.map((def) => UpgradeCard(def, actions));
-	const el = h('div', { className: 'upgrades' },
-		h('ul', { className: 'card-list' },
-			h('li', {}, 'Click the buttons to upgrade yourself and your troops. New options will appear as you earn more kills.'),
-			cards.map((card) => card.el),
-			h('li'),
-		),
+function WeaponPanel(actions) {
+	let selected = 'muzzle';
+	const callouts = WEAPON_SLOTS.map((slot) => {
+		const label = h('span', { className: 'weapon-callout-name' });
+		const badge = h('span', { className: 'weapon-callout-badge' });
+		const button = h('button', {
+			type: 'button',
+			className: `weapon-callout weapon-callout-${slot.id}`,
+			onClick: () => {
+				selected = slot.id;
+				noticeAttachments(slot.id);
+				actions.render();
+			},
+		}, h('span', { className: 'weapon-callout-slot' }, slot.name), label, badge);
+		return { slot, button, label, badge };
+	});
+	const rows = ATTACHMENTS.map((def) => AttachmentRow(def, actions));
+	const heading = h('h4', { className: 'weapon-slot-title' });
+	const summary = h('p', { className: 'weapon-summary' });
+	const emptyNote = h('p', { className: 'weapon-empty' }, 'More attachments for this slot appear as you earn kills.');
+	const el = h('div', { className: 'weapon' },
+		summary,
+		h('div', { className: 'weapon-stage' }, rifleGraphic(), ...callouts.map((callout) => callout.button)),
+		heading,
+		h('ul', { className: 'card-list attachment-list' }, rows.map((row) => row.el), emptyNote),
 	);
 
 	return {
 		el,
 		update(s) {
-			el.hidden = s.activeTab !== 'upgrades';
-			cards.forEach((card) => card.update(s));
+			el.hidden = s.activeTab !== 'weapon';
+			if (s.activeTab === 'weapon') noticeAttachments(selected);
+			const { clickBonus, critChance } = stats(s);
+			setText(summary, `Click damage ${formatNumber(clickBonus)} · Attack every ${formatNumber(attackCooldown(s))}s · ${magazineRounds(s)} rounds, ${formatNumber(reloadSeconds(s))}s reload · Crit ${Math.round(critChance * 100)}%`);
+			callouts.forEach(({ slot, button, label, badge }) => {
+				const equipped = ATTACHMENTS.find((def) => def.id === s.weapon.equipped[slot.id]);
+				setText(label, equipped ? equipped.name : 'Empty');
+				button.classList.toggle('weapon-callout-selected', slot.id === selected);
+				const unseen = unseenAttachments(slot.id, s);
+				badge.hidden = unseen === 0;
+				setText(badge, unseen);
+			});
+			const slot = WEAPON_SLOTS.find((item) => item.id === selected);
+			setText(heading, slot.name);
+			rows.forEach((row) => row.update(s, selected));
+			emptyNote.hidden = rows.some((row) => row.el.hidden === false);
 		},
 	};
 }
@@ -681,7 +838,9 @@ function SkillsPanel(actions) {
 
 function LevelRow(def, actions) {
 	const deployButton = h('button', { type: 'button', onClick: () => actions.selectLevel(def.id) }, 'Deploy');
+	const fightOdds = h('span', { className: 'fight-odds' });
 	const fightButton = h('button', { type: 'button', className: 'fight-button', onClick: () => actions.startBoss(def.id) }, 'Fight Boss');
+	const fightRow = h('span', { className: 'fight-row' }, fightButton, fightOdds);
 	const status = h('span', { className: 'level-row-status' });
 	const bar = h('progress', { className: 'level-progress' });
 	const count = h('span', { className: 'level-row-count' });
@@ -695,7 +854,7 @@ function LevelRow(def, actions) {
 			reward,
 		),
 		h('div', { className: 'level-row-progress' }, bar, count),
-		h('div', { className: 'level-row-actions' }, deployButton, fightButton),
+		h('div', { className: 'level-row-actions' }, deployButton, fightRow),
 	);
 
 	return {
@@ -717,7 +876,8 @@ function LevelRow(def, actions) {
 			bar.value = cleared && !active ? def.killsRequired : Math.min(s.map.progress[def.id], def.killsRequired);
 			setText(count, `${formatCount(bar.value)} / ${formatCount(def.killsRequired)}`);
 			deployButton.hidden = !available || active || s.boss !== null;
-			fightButton.hidden = !canFightBoss(def.id, s);
+			fightRow.hidden = !canFightBoss(def.id, s);
+			showOutlook(fightOdds, fightOutlook(playerPower(s), estimatedBossPower(def)));
 		},
 	};
 }
@@ -774,19 +934,19 @@ function Tab(id, name, actions, countAvailable = () => 0) {
 	};
 }
 
-const availableUpgrades = (s) => UPGRADES.filter((def) => s.revealed.upgrades[def.id] && canBuyUpgrade(def, s)).length;
+const availableAttachments = (s) => ATTACHMENTS.filter((def) => canBuyAttachment(def, s)).length;
 const bossesReady = (s) => LEVELS.filter((def) => canFightBoss(def.id, s)).length;
 export function App(actions) {
 	const header = Header(actions);
 	const units = UnitsPanel(actions);
 	const buildings = BuildingsPanel(actions);
-	const upgrades = UpgradesPanel(actions);
+	const weapon = WeaponPanel(actions);
 	const skills = SkillsPanel(actions);
 	const map = MapPanel(actions);
 	const tabs = [
 		Tab('units', 'Units', actions),
 		Tab('buildings', 'Buildings', actions, availableBuildings),
-		Tab('upgrades', 'Upgrades', actions, availableUpgrades),
+		Tab('weapon', 'Weapon', actions, availableAttachments),
 		Tab('skills', 'Skills', actions, skillPoints),
 		Tab('map', 'Map', actions, bossesReady),
 	];
@@ -798,7 +958,7 @@ export function App(actions) {
 				h('div', { className: 'tab-bar' }, tabs.flatMap((tab, i) => (i === 0 ? [tab.el] : [' ', tab.el]))),
 				units.el,
 				buildings.el,
-				upgrades.el,
+				weapon.el,
 				skills.el,
 				map.el,
 			),
@@ -813,7 +973,7 @@ export function App(actions) {
 			tabs.forEach((tab) => tab.update(s));
 			units.update(s);
 			buildings.update(s);
-			upgrades.update(s);
+			weapon.update(s);
 			skills.update(s);
 			map.update(s);
 		},

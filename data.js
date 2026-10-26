@@ -1,4 +1,4 @@
-export const VERSION = '1.8';
+export const VERSION = '1.9';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -126,63 +126,58 @@ export const BUILDINGS = [
 	{ id: 'bomberHangar', unit: 'b1b', label: ['B-1', 'B-1s'], name: 'Bomber Hangar', baseCost: 5_000_000, seconds: 300, description: 'A strategic hangar that fields a crewed B-1 Lancer every five minutes.' },
 ];
 
-// Array order is the upgrade chain: each upgrade requires the one before it.
-// Effects live in stats() in game.js, keyed by id.
-export const UPGRADES = [
-	{
-		id: 'redDot',
-		name: 'Red Dot Sight',
-		cost: 125,
-		reveal: 0,
-		description: 'This upgrade will replace the iron sights on your rifle, allowing greater accuracy and more kills per second with each click.',
-		bonus: { before: 'Kills Per Second bonus: ', value: '+5%', after: '' },
-		purchasedMessage: 'Red Dot Sight Purchased - 5% Bonus Kills Per Click',
-	},
-	{
-		id: 'm203',
-		name: 'M203 Launcher',
-		cost: 750,
-		reveal: 500,
-		description: 'Attach an M203 40MM grenade launcher to the underside of your rifle. Splash damage results in greater enemy casualties.',
-		bonus: { before: 'Kills Per Second bonus: ', value: '+15%', after: '' },
-		purchasedMessage: 'Grenade Launcher Purchased - 15% Bonus Kills Per Click',
-	},
-	{
-		id: 'drillInstructors',
-		name: 'Better Drill Instructors',
-		cost: 1950,
-		reveal: 1500,
-		description: 'Hire better drill instructors for boot camp, resulting in more efficient and effective recruits. Best of all they can aim better!',
-		bonus: { before: 'Recruit Kills Per Second: ', value: '1 - 3', after: '' },
-		purchasedMessage: 'Better Drill Instructors Purchased - Recruit KPS is now 1 - 3',
-	},
-	{
-		id: 'emr',
-		name: 'M39 EMR upgrade',
-		cost: 25000,
-		reveal: 20000,
-		description: 'Replace the old M14 EBR designated marksman rifle with the newer M39 EMRs. Improves accuracy and range for Marksmen.',
-		bonus: { before: 'Marksman Kills Per Second bonus: ', value: '+65%', after: '' },
-		purchasedMessage: 'EMR Upgrade Purchased - Marksman KPS is now 8.25',
-	},
-	{
-		id: 'closeAirSupport',
-		name: 'Close Air Support',
-		cost: 250000,
-		reveal: 200000,
-		description: 'Call in close air support. This upgrade has 50% chance to automatically do 100000 kills every 5 seconds.',
-		bonus: { before: '', value: '50% chance, 100000 kills, 5sec cooldown.', after: '' },
-		purchasedMessage: 'Close Air Support Purchased - 50% chance to kill 100000 every 5 seconds',
-	},
-	{
-		id: 'doubleTap',
-		name: 'Double Tap I',
-		cost: 1200000,
-		reveal: 1000000,
-		description: 'Upgrade your rifle to have a higher fire rate. Each click earns 3% of total Kills Per Second.',
-		bonus: { before: 'Earn ', value: '3%', after: ' KPS per click' },
-		purchasedMessage: 'Double Tap Purchased - Earn 3% of your total Kills Per Second.',
-	},
+// Seconds between attacks with nothing equipped. Barrel and magazine speed multipliers shrink this.
+export const BASE_ATTACK_COOLDOWN = 0.5;
+// Rounds in an empty magazine slot, and seconds to refill it.
+export const BASE_MAG_ROUNDS = 30;
+export const BASE_RELOAD_SECONDS = 2;
+
+// One attachment equipped per slot. effect.click adds to the base 1 kill per click,
+// effect.speed multiplies the attack cooldown (lower is faster), effect.crit adds crit chance.
+// effect.magazine sets rounds in the mag and a reload-time multiplier (lower is faster).
+export const WEAPON_SLOTS = [
+	{ id: 'muzzle', name: 'Muzzle' },
+	{ id: 'barrel', name: 'Barrel' },
+	{ id: 'accessory', name: 'Accessory' },
+	{ id: 'underbarrel', name: 'Underbarrel' },
+	{ id: 'magazine', name: 'Magazine' },
+	{ id: 'sight', name: 'Sight' },
+	{ id: 'stock', name: 'Stock' },
+];
+
+export const ATTACHMENTS = [
+	{ id: 'flashHider', slot: 'muzzle', name: 'Flash Hider', cost: 100, reveal: 0, description: 'A short cage on the muzzle. A little extra bite per shot.', effect: { type: 'click', amount: 0.15 } },
+	{ id: 'suppressor', slot: 'muzzle', name: 'Suppressor', cost: 800, reveal: 400, description: 'A long can. The shot hits harder and stays quiet.', effect: { type: 'click', amount: 0.35 } },
+	{ id: 'muzzleBrake', slot: 'muzzle', name: 'Muzzle Brake', cost: 5_000, reveal: 4_000, description: 'Vents that slam the blast sideways. The hardest-hitting muzzle.', effect: { type: 'click', amount: 0.6 } },
+
+	{ id: 'basicBarrel', slot: 'barrel', name: 'Basic Barrel', cost: 0, reveal: 0, starter: true, description: 'The barrel the rifle shipped with.', effect: { type: 'none' } },
+	{ id: 'shortBarrel', slot: 'barrel', name: 'Short Barrel', cost: 250, reveal: 50, description: 'A chopped barrel. Quicker to bring back on target.', effect: { type: 'speed', amount: 0.9 } },
+	{ id: 'longBarrel', slot: 'barrel', name: 'Long Barrel', cost: 2_000, reveal: 1_500, description: 'More length, a faster follow-up shot.', effect: { type: 'speed', amount: 0.75 } },
+	{ id: 'heavyBarrel', slot: 'barrel', name: 'Heavy Barrel', cost: 20_000, reveal: 15_000, description: 'A thick profile that settles fast. The quickest barrel.', effect: { type: 'speed', amount: 0.6 } },
+
+	{ id: 'laser', slot: 'accessory', name: 'Laser', cost: 400, reveal: 200, description: 'A visible aiming dot. A few more shots land as crits.', effect: { type: 'crit', amount: 0.02 } },
+	{ id: 'light', slot: 'accessory', name: 'Light', cost: 3_500, reveal: 3_000, description: 'A weapon light. Targets stand out, and crits come more often.', effect: { type: 'crit', amount: 0.04 } },
+	{ id: 'rangefinder', slot: 'accessory', name: 'Rangefinder', cost: 80_000, reveal: 60_000, description: 'Reads the range before you fire. The best crit chance on the rail.', effect: { type: 'crit', amount: 0.08 } },
+
+	{ id: 'grip', slot: 'underbarrel', name: 'Grip', cost: 600, reveal: 300, description: 'A vertical grip. Steadier shots, a bit more damage.', effect: { type: 'click', amount: 0.25 } },
+	{ id: 'bipod', slot: 'underbarrel', name: 'Bipod', cost: 6_000, reveal: 5_000, description: 'Plants the rifle. Hits land harder.', effect: { type: 'click', amount: 0.5 } },
+	{ id: 'grenadeLauncher', slot: 'underbarrel', name: 'Grenade Launcher', cost: 50_000, reveal: 40_000, description: 'A 40mm launcher under the barrel. Splash damage, by far the hardest hit.', effect: { type: 'click', amount: 1.5 } },
+
+	{ id: 'basicMag', slot: 'magazine', name: 'Basic Mag', cost: 0, reveal: 0, starter: true, description: 'The 30-round magazine that came with the rifle.', effect: { type: 'magazine', rounds: 30, reload: 1 } },
+	{ id: 'fastMag', slot: 'magazine', name: 'Fast Mag', cost: 350, reveal: 100, description: 'A speed magazine. Still 30 rounds, but it seats in half the time.', effect: { type: 'magazine', rounds: 30, reload: 0.5 } },
+	{ id: 'regularMag', slot: 'magazine', name: 'Regular Mag', cost: 2_500, reveal: 2_000, description: 'A 60-round magazine. Twice as many shots before the reload.', effect: { type: 'magazine', rounds: 60, reload: 1 } },
+	{ id: 'heavyMag', slot: 'magazine', name: 'Heavy Mag', cost: 40_000, reveal: 30_000, description: 'A 120-round magazine. The longest belt before you have to reload.', effect: { type: 'magazine', rounds: 120, reload: 1 } },
+
+	{ id: 'ironSights', slot: 'sight', name: 'Iron Sights', cost: 0, reveal: 0, starter: true, description: 'The rifle\'s iron sights. Plain, and always there.', effect: { type: 'none' } },
+	{ id: 'redDot', slot: 'sight', name: 'Red Dot Sight', cost: 125, reveal: 0, description: 'A red dot in place of the iron sights. Crits start to land.', effect: { type: 'crit', amount: 0.03 } },
+	{ id: 'acog', slot: 'sight', name: 'ACOG Scope', cost: 15_000, reveal: 10_000, description: 'A fixed combat optic. Crits come more often.', effect: { type: 'crit', amount: 0.06 } },
+	{ id: 'scope6x', slot: 'sight', name: '6x Scope', cost: 150_000, reveal: 100_000, description: 'A magnified scope. Much more likely to crit.', effect: { type: 'crit', amount: 0.1 } },
+	{ id: 'nvScope', slot: 'sight', name: 'NV Scope', cost: 2_000_000, reveal: 1_500_000, description: 'A night-vision scope. The highest crit chance of any sight.', effect: { type: 'crit', amount: 0.14 } },
+
+	{ id: 'basicStock', slot: 'stock', name: 'Basic Stock', cost: 0, reveal: 0, starter: true, description: 'The stock the rifle shipped with.', effect: { type: 'none' } },
+	{ id: 'foldingStock', slot: 'stock', name: 'Folding Stock', cost: 1_000, reveal: 800, description: 'A compact stock. A modest boost to each shot.', effect: { type: 'click', amount: 0.2 } },
+	{ id: 'rifleStock', slot: 'stock', name: 'Rifle Stock', cost: 25_000, reveal: 20_000, description: 'A solid stock that puts more of the shot on target.', effect: { type: 'click', amount: 0.45 } },
+	{ id: 'sniperStock', slot: 'stock', name: 'Sniper Stock', cost: 1_000_000, reveal: 800_000, description: 'A precision stock. The strongest stock bonus to click damage.', effect: { type: 'click', amount: 0.8 } },
 ];
 
 
@@ -200,7 +195,7 @@ export const XP_GROWTH = 1.5;
 export const SKILL_BRANCHES = [
 	{ id: 'assault', name: 'Assault', description: 'More kills from clicking and from your troops.' },
 	{ id: 'intel', name: 'Intel', description: 'Critical hits, better odds, and High-Value Targets.' },
-	{ id: 'logistics', name: 'Logistics', description: 'Cheaper units and upgrades.' },
+	{ id: 'logistics', name: 'Logistics', description: 'Cheaper units and attachments.' },
 ];
 
 // Points that must be spent in a branch before each tier (1 - 4) opens.
@@ -254,7 +249,7 @@ export const SKILLS = [
 	},
 	{
 		id: 'rapidFire', branch: 'assault', tier: 3, maxRank: 3, name: 'Rapid Fire',
-		description: 'Each click also earns +1% of your KPS per rank. Stacks with Double Tap.',
+		description: 'Each click also earns +1% of your KPS per rank.',
 		effect: { type: 'clickKpsShare', amount: 0.01 },
 	},
 	{
@@ -313,7 +308,7 @@ export const SKILLS = [
 	},
 	{
 		id: 'procurement', branch: 'logistics', tier: 2, maxRank: 3, name: 'Procurement',
-		description: 'Upgrade prices 8% lower per rank.',
+		description: 'Attachment prices 8% lower per rank.',
 		effect: { type: 'upgradeDiscount', amount: 0.08 },
 	},
 	{
@@ -342,8 +337,6 @@ export const SKILLS = [
 
 // ======== World map ========
 
-// Clicks per second assumed when turning click damage into power. A steady pace, not a frenzy.
-export const POWER_CLICKS_PER_SECOND = 5;
 // Displayed boss power is off by up to this fraction either way (fixed per level), so matchups aren't exact.
 export const BOSS_POWER_FUZZ = 0.1;
 // Share of current (spendable) kills lost when a boss fight runs out of time.
