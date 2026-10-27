@@ -5,6 +5,7 @@ import {
 	BUILDINGS, BUILDING_COST_GROWTH, BUILDING_SPEEDUP,
 	PERKS, perkCost, prestigePoints, prestigeKillsRequired, thresholdsReached,
 } from './data.js';
+import { record, replaceStream, savedEvents, clearStream } from './events.js';
 
 const unitDef = Object.fromEntries(UNITS.map((def) => [def.id, def]));
 const attachmentDef = Object.fromEntries(ATTACHMENTS.map((def) => [def.id, def]));
@@ -64,6 +65,8 @@ const freshState = () => ({
 	// Not saved: earliest time the Attack button can fire again, and when a reload finishes.
 	nextAttackAt: 0,
 	reloadUntil: 0,
+	// Not saved: kills each class dealt on the last tick, shown under its icon.
+	lastUnitDamage: {},
 	// Not saved: lets the UI notice a new critical hit.
 	attacks: 0,
 	lastAttack: { amount: 0, crit: false },
@@ -81,6 +84,45 @@ const freshState = () => ({
 
 // Other modules hold a reference to this object, so it is only ever mutated, never reassigned.
 export const state = freshState();
+
+// A plain copy of the game, attached to every event so listeners can read the world after it.
+function gameData(s = state) {
+	const troops = UNITS.reduce((sum, def) => sum + s.units[def.id], 0);
+	return {
+		kills: s.kills,
+		kps: s.kps,
+		xp: s.xp,
+		lifetimeKills: s.lifetimeKills,
+		supplies: s.supplies,
+		troops,
+		units: { ...s.units },
+		bought: { ...s.bought },
+		buildings: { ...s.buildings },
+		buildingProgress: { ...s.buildingProgress },
+		skills: { ...s.skills },
+		perks: { ...s.perks },
+		perkPoints: s.perkPoints,
+		bonusSkillPoints: s.bonusSkillPoints,
+		prestigeCount: s.prestigeCount,
+		thresholdsClaimed: s.thresholdsClaimed,
+		activeLevel: s.map.activeLevel,
+		progress: { ...s.map.progress },
+		cleared: { ...s.map.cleared },
+		activeTab: s.activeTab,
+		buyAmount: s.buyAmount,
+		ammo: s.ammo,
+		weaponOwned: { ...s.weapon.owned },
+		weaponEquipped: { ...s.weapon.equipped },
+		weaponSeen: { ...s.weapon.seen },
+		revealedUnits: { ...s.revealed.units },
+		revealedAttachments: { ...s.revealed.attachments },
+		boss: s.boss ? { ...s.boss } : null,
+	};
+}
+
+function happened(type, detail = {}) {
+	record(type, detail, gameData());
+}
 
 
 
@@ -183,8 +225,8 @@ const effectSum = (s, type) => equippedAttachments(s)
 	.reduce((sum, def) => sum + def.effect.amount, 0);
 
 export const stats = (s = state) => ({
-	// Weapon. clickBonus starts at 1 kill per click; attachments add to it.
-	clickBonus: 1 + effectSum(s, 'click'),
+	// Weapon. clickBonus starts at 1 kill per click; attachments add to it. The deployed zone adds its own flat bonus.
+	clickBonus: 1 + effectSum(s, 'click') + (levelDef[s.map.activeLevel]?.zoneClickBonus ?? 0),
 
 	// Assault
 	clickMultiplier: (1 + effectTotal(s, 'clickBonus')) * perkAmount(s, 'clickMultiplier', 1),
@@ -239,6 +281,7 @@ export function finishReload(s = state) {
 	if (s.ammo <= 0 && s.reloadUntil > 0 && Date.now() >= s.reloadUntil) {
 		s.ammo = magazineRounds(s);
 		s.reloadUntil = 0;
+		if (s === state) happened('reload-finished', {});
 	}
 }
 
@@ -424,7 +467,10 @@ export const quoteBuilding = (def, s = state) => {
 };
 
 export function setBuyAmount(amount) {
-	if (amount === 1 || amount === 5 || amount === 100 || amount === 'max') state.buyAmount = amount;
+	if (amount !== 1 && amount !== 5 && amount !== 100 && amount !== 'max') return;
+	if (state.buyAmount === amount) return;
+	state.buyAmount = amount;
+	happened('buy-amount', { amount });
 }
 
 // Units per second from all buildings of this type: each one after the first adds BUILDING_SPEEDUP of the base rate.
@@ -475,12 +521,14 @@ function repeatClears() {
 	state.supplies += supplies;
 	state.repeatClears.count += clears;
 	state.repeatClears.supplies += supplies;
+	happened('supplies-collected', { levelId: def.id, clears, supplies });
 }
 
 function startLevel(id, defeatedBoss = null, supplies = 0) {
 	state.map.activeLevel = id;
 	state.levelStarts += 1;
 	state.lastLevelStart = { levelId: id, defeatedBoss, supplies };
+	happened('level-started', { levelId: id, defeatedBoss, supplies });
 }
 
 export function selectLevel(id) {
@@ -501,6 +549,7 @@ export function startBoss(id) {
 	const maxHp = bossHp(def);
 	const time = bossSeconds(def);
 	state.boss = { levelId: id, hp: maxHp, maxHp, timeLeft: time, maxTime: time };
+	happened('boss-started', { levelId: id, bossName: def.boss.name });
 }
 
 function winBoss() {
@@ -521,6 +570,7 @@ function winBoss() {
 		state.levelStarts += 1;
 		state.lastLevelStart = { levelId: id, defeatedBoss: def.boss.name, supplies: paid };
 	}
+	happened('boss-defeated', { levelId: id, bossName: def.boss.name, supplies: paid });
 }
 
 function damageBoss(amount) {
@@ -540,7 +590,10 @@ function loseBoss() {
 	state.kills -= killsLost;
 	state.bossLosses += 1;
 	state.lastBossLoss = { bossName: levelDef[state.boss.levelId].boss.name, killsLost };
+	const levelId = state.boss.levelId;
+	const bossName = state.lastBossLoss.bossName;
 	state.boss = null;
+	happened('boss-retreated', { levelId, bossName, killsLost });
 }
 
 function updateBoss() {
@@ -561,6 +614,7 @@ export function attack() {
 	finishReload();
 	if (state.ammo <= 0) {
 		state.reloadUntil = now + reloadSeconds() * 1000;
+		happened('reload', {});
 		return;
 	}
 	const { clickBonus, clickMultiplier, clickKpsShare, critChance, critMultiplier } = stats();
@@ -578,6 +632,7 @@ export function attack() {
 			state.reloadUntil = now + reloadSeconds() * 1000;
 		}
 	}
+	happened('attack', { earned: state.lastAttack.amount, crit: state.lastAttack.crit });
 }
 
 export function buyUnit(id) {
@@ -589,6 +644,7 @@ export function buyUnit(id) {
 	state.units[id] += count * perkAmount(state, 'doubleEnlist', 1);
 	state.bought[id] += count;
 	if (def.needs) state.units[def.needs.unit] -= count * crew;
+	happened('unit-bought', { id, count, cost, gained: count * perkAmount(state, 'doubleEnlist', 1) });
 }
 
 export function buyBuilding(id) {
@@ -598,17 +654,21 @@ export function buyBuilding(id) {
 	if (count < 1) return;
 	state.supplies -= cost;
 	state.buildings[id] += count;
+	happened('building-bought', { id, count, cost });
 }
 
 // Produced units are free: no kills and no crew. Leftover progress carries into the next second.
 function produceUnits() {
+	const produced = {};
 	for (const def of BUILDINGS) {
 		const progress = state.buildingProgress[def.id] + buildingRate(def);
 		// The epsilon stops float error (e.g. 3 x 1/3 = 0.9999...) from delaying a unit by a second.
 		const made = Math.floor(progress + 1e-9);
 		state.buildingProgress[def.id] = Math.max(0, progress - made);
 		state.units[def.unit] += made;
+		if (made > 0) produced[def.unit] = (produced[def.unit] ?? 0) + made;
 	}
+	return produced;
 }
 
 export function buyAttachment(id) {
@@ -619,6 +679,7 @@ export function buyAttachment(id) {
 	state.kills -= attachmentCost(def);
 	state.weapon.owned[id] = true;
 	equipAttachment(id);
+	happened('attachment-bought', { id });
 }
 
 export function equipAttachment(id) {
@@ -627,6 +688,7 @@ export function equipAttachment(id) {
 		const previous = magazineRounds();
 		state.weapon.equipped[def.slot] = id;
 		syncAmmo(previous);
+		happened('attachment-equipped', { id, slot: def.slot });
 	}
 }
 
@@ -638,9 +700,14 @@ export const unseenAttachments = (slot, s = state) => ATTACHMENTS.filter((def) =
 	&& !s.weapon.seen[def.id]).length;
 
 export function noticeAttachments(slot, s = state) {
+	let changed = false;
 	for (const def of ATTACHMENTS) {
-		if (def.slot === slot && s.revealed.attachments[def.id]) s.weapon.seen[def.id] = true;
+		if (def.slot === slot && s.revealed.attachments[def.id] && !s.weapon.seen[def.id]) {
+			s.weapon.seen[def.id] = true;
+			changed = true;
+		}
 	}
+	if (changed && s === state) happened('attachments-noticed', { slot });
 }
 
 export function clearAttachment(slot) {
@@ -648,6 +715,7 @@ export function clearAttachment(slot) {
 		const previous = magazineRounds();
 		state.weapon.equipped[slot] = starterForSlot[slot] ?? null;
 		syncAmmo(previous);
+		happened('attachment-cleared', { slot });
 	}
 }
 
@@ -655,6 +723,7 @@ export function buySkill(id) {
 	const def = skillDef[id];
 	if (canBuySkill(def)) {
 		state.skills[id] += 1;
+		happened('skill-bought', { id });
 	}
 }
 
@@ -665,6 +734,7 @@ export function buyPerk(id) {
 	state.perks[id] = true;
 	// A larger magazine fills immediately, the same as equipping one.
 	syncAmmo(previous);
+	happened('perk-bought', { id });
 }
 
 export function prestige() {
@@ -684,40 +754,49 @@ export function prestige() {
 	const recruits = perkAmount(state, 'startingRecruits', 0);
 	if (recruits > 0) state.units.recruit += recruits;
 	state.ammo = magazineRounds();
+	happened('prestige', { count, points: state.perkPoints });
 }
 
 export function resetGame() {
 	Object.assign(state, freshState());
+	clearStream();
+	happened('reset', {});
 }
 
 export function resetSkills() {
 	for (const def of SKILLS) {
 		state.skills[def.id] = 0;
 	}
+	happened('skills-reset', {});
 }
 
 export function addKills(amount) {
 	const n = Number(amount);
 	if (n > 0) state.kills += n;
+	if (n > 0) happened('kills-added', { amount: n });
 }
 
 export function addSupplies(amount) {
 	const n = Number(amount);
 	if (n > 0) state.supplies += n;
+	if (n > 0) happened('supplies-added', { amount: n });
 }
 
 export function addSkillPoints(amount) {
 	const n = Number(amount);
 	if (n > 0) state.bonusSkillPoints += n;
+	if (n > 0) happened('skill-points-added', { amount: n });
 }
 
 export function addPerkPoints(amount) {
 	const n = Number(amount);
 	if (n > 0) state.perkPoints += n;
+	if (n > 0) happened('perk-points-added', { amount: n });
 }
 
 export function setTab(tab) {
 	state.activeTab = tab;
+	happened('tab-selected', { tab });
 }
 
 // Each recruit rolls separately (0 - 1, or 1 - 3 with Better Drill Instructors) and keeps its best roll.
@@ -752,47 +831,68 @@ function updateHvt() {
 	if (state.hvt.nextIn <= 0) {
 		state.hvt.activeFor = HVT.duration;
 		state.hvt.nextIn = null;
+		happened('hvt-appeared', {});
 	}
 }
 
 export function tick() {
 	finishReload();
-	produceUnits();
+	const produced = produceUnits();
 	// Logistics trucks pay supplies directly. This is not a kill, so it skips earn().
 	state.supplies += supplyPerSecond();
-	const { kpsMultiplier, tickCritChance } = stats();
-	const recruitKills = rollRecruitKills() * kpsMultiplier(unitDef.recruit);
-	const unitKills = UNITS.reduce((sum, def) => sum + state.units[def.id] * unitKps(def), 0);
-	state.kps = recruitKills + unitKills;
+	const { kpsMultiplier, tickCritChance, allKillsMultiplier } = stats();
+	const rawDamage = {};
+	let kps = 0;
+	for (const def of UNITS) {
+		if (state.units[def.id] <= 0) continue;
+		// Recruits roll each second. Every other class deals its steady kills per second.
+		const raw = def.id === 'recruit'
+			? rollRecruitKills() * kpsMultiplier(def)
+			: state.units[def.id] * unitKps(def);
+		if (raw > 0) rawDamage[def.id] = raw;
+		kps += raw;
+	}
+	state.kps = kps;
 
 	const crit = tickCritChance > 0 && Math.random() < tickCritChance;
-	earn(crit ? state.kps * TICK_CRIT_MULTIPLIER : state.kps);
+	const scale = (crit ? TICK_CRIT_MULTIPLIER : 1) * allKillsMultiplier;
+	const damage = {};
+	for (const [id, raw] of Object.entries(rawDamage)) damage[id] = raw * scale;
+	state.lastUnitDamage = damage;
+	const earned = earn(kps * (crit ? TICK_CRIT_MULTIPLIER : 1));
 	updateHvt();
 	// After earn(), so the last second of KPS lands before time runs out.
 	updateBoss();
+	happened('tick', { earned, crit, produced, damage });
 }
 
 export function clickHvt() {
 	if (state.hvt.activeFor <= 0) {
 		return;
 	}
-	earn(hvtBaseReward(state));
+	const earned = earn(hvtBaseReward(state));
 	state.hvt.activeFor = 0;
 	state.hvt.nextIn = null;
+	happened('hvt-clicked', { earned });
 }
 
 // Reveals are sticky: once shown, a card stays visible even if kills drop.
 export function updateReveals(s = state) {
+	const units = [];
+	const attachments = [];
 	for (const def of UNITS) {
-		if (def.reveal === 0 || s.kills > def.reveal || s.units[def.id] > 0) {
+		if (!s.revealed.units[def.id] && (def.reveal === 0 || s.kills > def.reveal || s.units[def.id] > 0)) {
 			s.revealed.units[def.id] = true;
+			units.push(def.id);
 		}
 	}
 	for (const def of ATTACHMENTS) {
-		if (def.reveal === 0 || s.kills > def.reveal || s.weapon.owned[def.id]) {
+		if (!s.revealed.attachments[def.id] && (def.reveal === 0 || s.kills > def.reveal || s.weapon.owned[def.id])) {
 			s.revealed.attachments[def.id] = true;
+			attachments.push(def.id);
 		}
 	}
+	if (s === state && (units.length > 0 || attachments.length > 0)) happened('revealed', { units, attachments });
 }
 
 
@@ -819,6 +919,7 @@ export const serialize = (s = state) => JSON.stringify({
 	bonusSkillPoints: s.bonusSkillPoints,
 	prestigeCount: s.prestigeCount,
 	thresholdsClaimed: s.thresholdsClaimed,
+	events: savedEvents(),
 });
 
 const clampRank = (value, def) => Math.min(def.maxRank, Math.max(0, Math.floor(Number(value) || 0)));
@@ -949,5 +1050,16 @@ export function deserialize(json, s = state) {
 		lastBossLoss: s.lastBossLoss,
 		repeatClears: s.repeatClears,
 	});
+	const history = Array.isArray(save.events) ? save.events : [];
+	for (const def of LEVELS) {
+		const recorded = history.some((message) => message?.type === 'boss-defeated' && message.detail?.levelId === def.id);
+		if (fresh.map.cleared[def.id] && !recorded) {
+			history.push({ type: 'boss-defeated', time: 0, detail: { levelId: def.id, bossName: def.boss.name } });
+		}
+	}
+	history.push({ type: 'restored', time: Date.now(), detail: {}, data: gameData(s) });
+	replaceStream(history);
 	return true;
 }
+
+happened('start');

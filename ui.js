@@ -6,7 +6,9 @@ import {
 	levelDef, levelAvailable, levelBeat, canFightBoss, playerPower, bossPower, repeatClearSupplies, supplyPerSecond,
 	buildingRevealed, canBuyBuilding, buildingRate, quoteUnit, quoteBuilding,
 	perkTabBadge, canPrestige, canBuyPerk, autoAttack, nextPerkCost, pendingPrestigePoints, nextPrestigeKills,
+	state,
 } from './game.js';
+import { subscribe, bossDefeated, latestData } from './events.js';
 
 // Components are built once and return { el, update(state, env) }.
 // update() only patches the parts that change, so images and hover state survive re-renders.
@@ -258,7 +260,10 @@ function LevelPanel(actions) {
 		update(s) {
 			const def = levelDef[s.map.activeLevel];
 			levelId = def.id;
-			setText(zone, `${zoneDef[def.zone].name} \u00b7 ${zoneDef[def.zone].faction}`);
+			const zoneBonus = zoneDef[def.zone].clickBonus ?? 0;
+			setText(zone, zoneBonus > 0
+				? `${zoneDef[def.zone].name} \u00b7 ${zoneDef[def.zone].faction} \u00b7 Click damage +${formatCount(zoneBonus)}`
+				: `${zoneDef[def.zone].name} \u00b7 ${zoneDef[def.zone].faction}`);
 			setText(title, levelLabel(def));
 
 			const cleared = s.map.cleared[def.id];
@@ -326,7 +331,19 @@ function Header(actions) {
 	const hvtButton = h('button', { className: 'hvt-button', type: 'button', hidden: true, onClick: actions.clickHvt });
 	const loadButton = h('button', { type: 'button', onClick: actions.load }, 'Load');
 	const saveButton = h('button', { type: 'button', onClick: actions.save }, 'Save');
-	const resetButton = h('button', { type: 'button', className: 'reset-button', onClick: actions.reset }, 'Reset');
+	const confirmYes = h('button', { type: 'button', className: 'reset-yes', onClick: () => {
+		confirmBox.hidden = true;
+		actions.reset();
+	} }, 'Yes');
+	const confirmNo = h('button', { type: 'button', onClick: () => { confirmBox.hidden = true; } }, 'No');
+	const confirmBox = h('span', { className: 'reset-confirm', hidden: true }, 'Are you sure? ', confirmYes, ' ', confirmNo);
+	const resetButton = h('button', { type: 'button', className: 'reset-button', onClick: () => {
+		confirmBox.hidden = !confirmBox.hidden;
+	} }, 'Reset');
+	const resetWrap = h('span', { className: 'reset-wrap' }, confirmBox, resetButton);
+	document.addEventListener('pointerdown', (event) => {
+		if (!confirmBox.hidden && !resetWrap.contains(event.target)) confirmBox.hidden = true;
+	});
 	const cooldownFill = h('span', { className: 'attack-cooldown' });
 	const ammoLabel = h('span', { className: 'attack-ammo' });
 	const attackButton = h('button', { className: 'clicker', type: 'button' }, h('span', { className: 'attack-label' }, 'Attack'), ammoLabel, cooldownFill);
@@ -364,7 +381,7 @@ function Header(actions) {
 		h('div', { className: 'menu' },
 			h('span', { className: 'brand' }, `Clicking Spree v${VERSION}`), ' ',
 			h('span', { className: 'notation-switch' }, ...notationButtons), ' ',
-			loadButton, ' ', saveButton, ' ', resetButton,
+			loadButton, ' ', saveButton, ' ', resetWrap,
 		),
 		levelPanel.el,
 		attackButton,
@@ -503,8 +520,10 @@ function UnitCard(def, actions) {
 	const crewAmount = h('span');
 	const crew = def.needs && [h('br'), '+ ', crewAmount, ' ', def.needs.label];
 
+	const kpsText = h('div', { className: 'unit-kps' }, 'kps: 0');
+	const thumb = h('div', { className: 'unit-thumb' }, h('img', { src: def.image, alt: def.name }), kpsText);
 	const el = h('li', { className: 'unit-row' },
-		h('div', { className: 'unit-thumb' }, h('img', { src: def.image, alt: def.name })),
+		thumb,
 		h('div', { className: 'unit-info' },
 			button,
 			h('p', { className: 'unit-desc' }, def.description),
@@ -526,6 +545,8 @@ function UnitCard(def, actions) {
 			setText(cost, batchCost(quote, s.buyAmount));
 			setText(have, formatCount(s.units[def.id]));
 			setText(rate, def.sps ? formatNumber(unitSps(def, s)) : unitKpsLabel(def, s));
+			const dealt = def.sps ? s.units[def.id] * unitSps(def, s) : (s.lastUnitDamage?.[def.id] ?? 0);
+			setText(kpsText, `${formatNumber(dealt)} ${def.sps ? 'supplies /s' : 'kills /s'}`);
 			if (def.needs) setText(crewAmount, formatCount(crewNeeded(def, s) * batch));
 		},
 	};
@@ -911,6 +932,7 @@ function ZoneSection(zone, actions) {
 	const el = h('div', { className: 'zone-section' },
 		h('h4', {}, `Zone ${ZONES.indexOf(zone) + 1}: ${zone.name}`),
 		h('p', { className: 'zone-faction' }, `Enemy: ${zone.faction}`),
+		zone.clickBonus > 0 && h('p', { className: 'zone-bonus' }, `Click damage +${formatCount(zone.clickBonus)} while you are deployed in this zone.`),
 		h('ul', { className: 'level-list' }, rows.map((row) => row.el)),
 	);
 
@@ -1066,6 +1088,15 @@ const batchCost = (quote, amount) => {
 	return formatCount(quote.cost);
 };
 
+// 1x is always available. The rest open from the event stream: current troops, and whether the first boss was beaten.
+const FIRST_BOSS = LEVELS[0].id;
+const buyAmountUnlocked = (amount) => {
+	if (amount === 1) return true;
+	if (amount === 'max') return bossDefeated(FIRST_BOSS);
+	const troops = latestData()?.troops ?? 0;
+	return amount === 5 ? troops >= 100 : troops >= 1000;
+};
+
 function BuyAmount(actions) {
 	const options = [[1, '1x'], [5, '5x'], [100, '100x'], ['max', 'Max']];
 	const buttons = options.map(([amount, label]) => ({
@@ -1080,15 +1111,18 @@ function BuyAmount(actions) {
 		h('span', { className: 'buy-amount-label' }, 'Buy'),
 		...buttons.map((button) => button.el),
 	);
-	return {
-		el,
-		update(s) {
-			el.hidden = s.activeTab !== 'units' && s.activeTab !== 'buildings';
-			for (const button of buttons) {
-				button.el.classList.toggle('buy-amount-active', s.buyAmount === button.amount);
-			}
-		},
+	const sync = (s) => {
+		el.hidden = s.activeTab !== 'units' && s.activeTab !== 'buildings';
+		for (const button of buttons) {
+			button.el.hidden = !buyAmountUnlocked(button.amount);
+			button.el.classList.toggle('buy-amount-active', s.buyAmount === button.amount);
+		}
 	};
+	subscribe(() => {
+		if (!buyAmountUnlocked(state.buyAmount)) actions.setBuyAmount(1);
+		sync(state);
+	});
+	return { el, update: sync };
 }
 
 export function App(actions) {

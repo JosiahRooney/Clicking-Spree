@@ -1,4 +1,4 @@
-export const VERSION = '1.12';
+export const VERSION = '1.13';
 
 // needs: units consumed on purchase. reveal: kills needed before the unit is shown.
 // group: which group-specific skills (e.g. Armored Doctrine, Motor Pool) apply to the unit.
@@ -352,6 +352,7 @@ export const BOSS_RETREAT_PENALTY = 0.2;
 export const ZONES = [
 	{
 		id: 'desert', name: 'Operation Desert Anvil', faction: 'Insurgent Militia',
+		clickBonus: 0,
 		levels: [
 			{ id: 'desert1', name: 'Checkpoint Raid', killsRequired: 100, boss: { name: 'Militia Captain', hp: 240, seconds: 30 } },
 			{ id: 'desert2', name: 'Supply Route', killsRequired: 500, boss: { name: 'Convoy Commander', hp: 1_300, seconds: 30 } },
@@ -361,6 +362,7 @@ export const ZONES = [
 	},
 	{
 		id: 'jungle', name: 'Operation Jungle Viper', faction: 'Guerrilla Cartel',
+		clickBonus: 50,
 		levels: [
 			{ id: 'jungle1', name: 'River Crossing', killsRequired: 20000, boss: { name: 'Sniper Nest', hp: 280_000, seconds: 35 } },
 			{ id: 'jungle2', name: 'Hidden Airstrip', killsRequired: 60000, boss: { name: 'Smuggler Pilot', hp: 3_300_000, seconds: 35 } },
@@ -370,6 +372,7 @@ export const ZONES = [
 	},
 	{
 		id: 'tundra', name: 'Operation Iron Frost', faction: 'Northern Mechanized Army',
+		clickBonus: 500,
 		levels: [
 			{ id: 'tundra1', name: 'Frozen Outpost', killsRequired: 1000000, boss: { name: 'Recon Battalion', hp: 26_000_000_000, seconds: 40 } },
 			{ id: 'tundra2', name: 'Rail Yard', killsRequired: 3000000, boss: { name: 'Armored Train', hp: 32_000_000_000, seconds: 40 } },
@@ -379,6 +382,7 @@ export const ZONES = [
 	},
 	{
 		id: 'blackSky', name: 'Operation Black Sky', faction: 'Rogue Superpower Command',
+		clickBonus: 0,
 		levels: [
 			{ id: 'blackSky1', name: 'Coastal Radar', killsRequired: 50000000, boss: { name: 'Air Defense Grid', hp: 57_000_000_000, seconds: 45 } },
 			{ id: 'blackSky2', name: 'Carrier Group', killsRequired: 150000000, boss: { name: 'Fleet Admiral', hp: 66_000_000_000, seconds: 45 } },
@@ -405,7 +409,7 @@ const roundTo2 = (n) => {
 // Flat, ordered list of every level, with its zone and position for labels like "Zone 1 - Level 2".
 export const LEVELS = ZONES
 	.flatMap((zone, z) => zone.levels.map((level, l) => ({
-		...level, zone: zone.id, zoneNumber: z + 1, levelNumber: l + 1,
+		...level, zone: zone.id, zoneNumber: z + 1, levelNumber: l + 1, zoneClickBonus: zone.clickBonus ?? 0,
 	})))
 	.map((level, index) => ({
 		...level,

@@ -33,9 +33,6 @@ function load() {
 }
 
 function reset() {
-	if (!confirm('Reset the game? All kills, units, attachments, XP, skills, map progress, perks and perk points will be lost, including your save.')) {
-		return;
-	}
 	resetGame();
 	localStorage.removeItem(saveKey);
 }

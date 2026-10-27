@@ -7,9 +7,9 @@ A little incremental game made in JavaScript.
 ## Features
 
 - Click or hold **Attack** to earn kills. Holding fires until the magazine is empty, then the rifle reloads. Spend kills on troops and attachments
-- 9 units in the Units tab, from Recruits to B-1 Lancer bombers. Combat units earn kills per second; the HEMET cargo truck earns supplies per second instead
+- 9 units in the Units tab, from Recruits to B-1 Lancer bombers. Combat units earn kills per second, shown under each icon; the HEMET cargo truck earns supplies per second instead
 - Advanced units are crewed by cheaper ones: Marksmen need a Recruit, Heavy Armor needs 3 Marksmen, a B-1 needs 4 Spec Ops, and so on
-- Unit prices rise 10% with every purchase. Troops produced by buildings do not raise the price. Units and buildings can be bought 1, 5, 100, or as many as you can afford at once
+- Unit prices rise 10% with every purchase. Troops produced by buildings do not raise the price. Buy 1 at a time from the start, then 5 at 100 troops, 100 at 1,000 troops, and as many as you can afford after the first boss
 - Recruits roll their kills individually each second, so your income has some randomness
 - A Weapon tab for the rifle. It starts with a basic barrel, a 30-round magazine, iron sights, and a basic stock, none of which add a bonus. Buy other attachments with kills, then equip, swap, or remove them. Muzzle, underbarrel, and stock add click damage; the barrel shortens the attack cooldown; magazines change how many rounds you fire and how long the reload takes; accessory and sight add crit chance
 - Units and attachments are revealed as your kill count grows
@@ -19,7 +19,7 @@ A little incremental game made in JavaScript.
   - Intel: critical hits, better recruit rolls, and High-Value Targets to click for bonus kills
   - Logistics: cheaper units and attachments, slower price growth, and smaller crews
 - Free skill reset at any time
-- A world map of 4 zones with 4 levels each: earn the level's kill goal, then beat its boss in a timed fight to unlock the next level
+- A world map of 4 zones with 4 levels each: earn the level's kill goal, then beat its boss in a timed fight to unlock the next level. Jungle adds 50 click damage and Iron Frost adds 500 while you are deployed there
 - Supplies: the first clear of each level pays a big supply reward, and later levels pay much more
 - Cleared levels can be replayed for supplies: each time you reach the kill goal again you collect 10% of the first-clear reward and stay on that level
 - Buildings, bought with supplies: one per unit type (Barracks, Firing Range, Supply Depot, up to the Bomber Hangar), each producing its unit for free on a timer that gets faster with every extra building
@@ -45,6 +45,7 @@ Then open the localhost URL it prints.
 
 ## Changelog
 
+- v1.13 - Buy amounts unlock as you play: 5x at 100 troops, 100x at 1,000, and Max after the first boss. Each unit shows its KPS under the icon. Jungle adds 50 click damage and Iron Frost adds 500 while you are deployed there. Reset confirms beside the button
 - v1.12 - Buy units and buildings 1, 5, 100, or as many as you can afford at once. A debug panel can grant kills, supplies, skill points, and perk points
 - v1.11 - Perks and prestige. Prestige resets the run and pays perk points for each kill threshold passed (1,000,000 pays 1, then 2, then 4). Twenty perks, bought in any order, persist across prestiges. The header shows power and supplies per second
 - v1.9 - Weapon tab replaces the upgrade chain: buy attachments and they equip, with a basic barrel, magazine, iron sights, and stock to start. Attacks have a cooldown and can be held to fire; magazines hold ammo and reload. New unlocks badge their slot. Boss buttons show the fight outlook. Building progress bars fill to the end
